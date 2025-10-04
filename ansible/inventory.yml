@@ -1,5 +1,24 @@
 all:
-  hosts:
-    app_server:
-      ansible_host: 52.87.218.91 # Fill in your instance's public IP address
-      ansible_ssh_private_key_file: /Users/dhiwakusumah/.ssh/github_sdo_key
+  children:
+    database:
+      hosts:
+        db_server:
+          ansible_host: 54.160.228.77
+          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_user: ubuntu
+    
+    backend:
+      hosts:
+        backend_server:
+          ansible_host: 107.21.185.37
+          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_user: ubuntu
+          db_private_ip: 172.31.29.69
+    
+    frontend:
+      hosts:
+        frontend_server:
+          ansible_host: 18.208.171.152
+          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_user: ubuntu
+          backend_public_ip: 107.21.185.37

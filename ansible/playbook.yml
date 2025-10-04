@@ -1,6 +1,6 @@
----
-- name: "Setup web server"
-  hosts: all
+# DATABASE SERVER SETUP
+- name: "Setup database server"
+  hosts: database
   remote_user: ubuntu
   become: true
 
@@ -18,7 +18,6 @@
         - ca-certificates
         - curl
         - software-properties-common
-        - git
 
     - name: "Add Docker GPG key"
       apt_key:
@@ -48,6 +47,15 @@
         groups: docker
         append: yes
 
+    - name: "Reset SSH connection to allow user changes to take effect"
+      meta: reset_connection
+
+    - name: "Install Docker Compose"
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-Linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
     - name: "Create app directory"
       file:
         path: /home/ubuntu/app
@@ -55,19 +63,196 @@
         owner: ubuntu
         group: ubuntu
 
-    - name: "Copy docker-compose.yml"
+    - name: "Copy docker-compose for database"
       copy:
-        src: ../docker-compose.yml  # Relative to playbook location
+        src: ../docker-compose-db.yml
         dest: /home/ubuntu/app/docker-compose.yml
         owner: ubuntu
         group: ubuntu
 
-    - name: "Run docker-compose"
+    - name: "Run docker-compose for database"
       community.docker.docker_compose_v2:
         project_src: /home/ubuntu/app
       become: false
 
-    - name: "Run docker-compose"
+# BACKEND SERVER SETUP
+- name: "Setup backend server"
+  hosts: backend
+  remote_user: ubuntu
+  become: true
+
+  tasks:
+    - name: "Update apt packages"
+      apt:
+        update_cache: yes
+
+    - name: "Install required packages"
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - software-properties-common
+
+    - name: "Add Docker GPG key"
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: "Add Docker repository"
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: "Install Docker"
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: "Start and enable Docker service"
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: "Add ubuntu user to docker group"
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: "Reset SSH connection to allow user changes to take effect"
+      meta: reset_connection
+
+    - name: "Install Docker Compose"
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-Linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: "Create app directory"
+      file:
+        path: /home/ubuntu/app
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+
+    - name: "Copy docker-compose for backend"
+      copy:
+        src: ../docker-compose-backend.yml
+        dest: /home/ubuntu/app/docker-compose.yml
+        owner: ubuntu
+        group: ubuntu
+
+    - name: "Create .env file for backend"
+      copy:
+        content: |
+          DB_HOST={{ db_private_ip }}
+        dest: /home/ubuntu/app/.env
+        owner: ubuntu
+        group: ubuntu
+
+    - name: "Wait for database to be ready"
+      wait_for:
+        host: "{{ db_private_ip }}"
+        port: 5432
+        timeout: 60
+
+    - name: "Run docker-compose for backend"
       community.docker.docker_compose_v2:
         project_src: /home/ubuntu/app
-      become: false # Run as ubuntu user
+      become: false
+
+# FRONTEND SERVER SETUP
+- name: "Setup frontend server"
+  hosts: frontend
+  remote_user: ubuntu
+  become: true
+
+  tasks:
+    - name: "Update apt packages"
+      apt:
+        update_cache: yes
+
+    - name: "Install required packages"
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - software-properties-common
+
+    - name: "Add Docker GPG key"
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: "Add Docker repository"
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: "Install Docker"
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: "Start and enable Docker service"
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: "Add ubuntu user to docker group"
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: "Reset SSH connection to allow user changes to take effect"
+      meta: reset_connection
+
+    - name: "Install Docker Compose"
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-Linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: "Create app directory"
+      file:
+        path: /home/ubuntu/app
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+
+    - name: "Copy docker-compose for frontend"
+      copy:
+        src: ../docker-compose-frontend.yml
+        dest: /home/ubuntu/app/docker-compose.yml
+        owner: ubuntu
+        group: ubuntu
+
+    - name: "Create .env file for frontend"
+      copy:
+        content: |
+          BACKEND_HOST={{ backend_public_ip }}
+        dest: /home/ubuntu/app/.env
+        owner: ubuntu
+        group: ubuntu
+
+    - name: "Wait for backend to be ready"
+      wait_for:
+        host: "{{ backend_public_ip }}"
+        port: 8080
+        timeout: 60
+
+    - name: "Run docker-compose for frontend"
+      community.docker.docker_compose_v2:
+        project_src: /home/ubuntu/app
+      become: false

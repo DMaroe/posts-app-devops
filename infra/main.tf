@@ -34,11 +34,20 @@ resource "aws_key_pair" "deployer_key" {
   public_key = file(var.path_to_ssh_public_key)
 }
 
-# A simplified security group for our single application server
-resource "aws_security_group" "app_server_sg" {
-  name        = "app-server-sg"
-  description = "Allow Frontend, Backend and SSH inbound traffic"
+# Database Security Group - PRIVATE (no public access)
+resource "aws_security_group" "db_sg" {
+  name        = "database-sg"
+  description = "Allow PostgreSQL from backend only"
 
+  # Allow PostgreSQL from backend server only
+  ingress {
+    protocol        = "tcp"
+    from_port       = 5432
+    to_port         = 5432
+    security_groups = [aws_security_group.backend_sg.id]
+  }
+
+  # SSH for management
   ingress {
     protocol    = "tcp"
     from_port   = 22
@@ -46,23 +55,6 @@ resource "aws_security_group" "app_server_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Frontend port
-  ingress {
-    protocol    = "tcp"
-    from_port   = 8081
-    to_port     = 8081
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Backend port
-  ingress {
-    protocol    = "tcp"
-    from_port   = 8080
-    to_port     = 8080
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Allow all outbound
   egress {
     protocol    = "-1"
     from_port   = 0
@@ -71,20 +63,116 @@ resource "aws_security_group" "app_server_sg" {
   }
 }
 
-# Create the single EC2 instance
-resource "aws_instance" "app_server" {
-  ami           = data.aws_ami.ubuntu.id
-  instance_type = "t2.micro"
-  key_name      = aws_key_pair.deployer_key.key_name
-  # Use the security group we created above
-  vpc_security_group_ids = [aws_security_group.app_server_sg.id]
+# Backend Security Group
+resource "aws_security_group" "backend_sg" {
+  name        = "backend-sg"
+  description = "Allow HTTP from frontend and public"
 
-  tags = {
-    Name = "App and DB Server"
+  # Allow backend port from anywhere (public API)
+  ingress {
+    protocol    = "tcp"
+    from_port   = 8080
+    to_port     = 8080
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH
+  ingress {
+    protocol    = "tcp"
+    from_port   = 22
+    to_port     = 22
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
-# Output the public IP address of our server
-output "app_server_public_ip" {
-  value = aws_instance.app_server.public_ip
+# Frontend Security Group
+resource "aws_security_group" "frontend_sg" {
+  name        = "frontend-sg"
+  description = "Allow HTTP from public"
+
+  # Allow frontend port from anywhere
+  ingress {
+    protocol    = "tcp"
+    from_port   = 8081
+    to_port     = 8081
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH
+  ingress {
+    protocol    = "tcp"
+    from_port   = 22
+    to_port     = 22
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    protocol    = "-1"
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Database EC2 Instance
+resource "aws_instance" "db_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  key_name      = aws_key_pair.deployer_key.key_name
+  vpc_security_group_ids = [aws_security_group.db_sg.id]
+
+  tags = {
+    Name = "Database Server"
+  }
+}
+
+# Backend EC2 Instance
+resource "aws_instance" "backend_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  key_name      = aws_key_pair.deployer_key.key_name
+  vpc_security_group_ids = [aws_security_group.backend_sg.id]
+
+  tags = {
+    Name = "Backend Server"
+  }
+}
+
+# Frontend EC2 Instance
+resource "aws_instance" "frontend_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  key_name      = aws_key_pair.deployer_key.key_name
+  vpc_security_group_ids = [aws_security_group.frontend_sg.id]
+
+  tags = {
+    Name = "Frontend Server"
+  }
+}
+
+output "db_server_public_ip" {
+  value = aws_instance.db_server.public_ip
+}
+
+output "db_server_private_ip" {
+  value = aws_instance.db_server.private_ip
+}
+
+output "backend_server_public_ip" {
+  value = aws_instance.backend_server.public_ip
+}
+
+output "backend_server_private_ip" {
+  value = aws_instance.backend_server.private_ip
+}
+
+output "frontend_server_public_ip" {
+  value = aws_instance.frontend_server.public_ip
 }
