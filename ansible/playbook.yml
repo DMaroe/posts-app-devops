@@ -3,8 +3,19 @@
   hosts: database
   remote_user: ubuntu
   become: true
+  gather_facts: no
 
   tasks:
+    - name: "Wait for SSH to become available"
+      wait_for_connection:
+        connect_timeout: 10
+        sleep: 5
+        delay: 5
+        timeout: 300
+
+    - name: "Gather facts"
+      setup:
+
     - name: "Update apt packages"
       apt:
         update_cache: yes
@@ -80,8 +91,19 @@
   hosts: backend
   remote_user: ubuntu
   become: true
+  gather_facts: no
 
   tasks:
+    - name: "Wait for SSH to become available"
+      wait_for_connection:
+        connect_timeout: 10
+        sleep: 5
+        delay: 5
+        timeout: 300
+
+    - name: "Gather facts"
+      setup:
+
     - name: "Update apt packages"
       apt:
         update_cache: yes
@@ -171,8 +193,19 @@
   hosts: frontend
   remote_user: ubuntu
   become: true
+  gather_facts: no
 
   tasks:
+    - name: "Wait for SSH to become available"
+      wait_for_connection:
+        connect_timeout: 10
+        sleep: 5
+        delay: 5
+        timeout: 300
+
+    - name: "Gather facts"
+      setup:
+
     - name: "Update apt packages"
       apt:
         update_cache: yes
