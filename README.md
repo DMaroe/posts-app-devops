@@ -80,11 +80,17 @@ Lastly, we are required to make the connection between the backend service and d
 
 ### Section B
 
+We are required to deploy the Frontend container as well by using the same logic as the backend and database where we use a docker image to contain the Frontend file. 
+
+To connect Frontend and Backend we dont need to do anything specifiic, just by pulling the docker image is enough. But what we need to take a look at is the port in security group settings to allow the connection better.
+
 ### Section C
 
-- Technologies used (Docker, PostgreSQL, Node.js/Express, React, etc.)  
-- Description of the final architecture and its functionality  
+To deploy Frontend, Backend, and Database containers we install docker via Ansible 'playbook.yml'. It starts with the bash script 'deploy.sh' where it starts the Terraform to create 3 EC2 containers, then the bash script runs Ansible to pull each respective service's containers via docker. Then we have 3 EC2 instances deployed with separate instances.
 
+GitHub actions workflow
+
+### Section D
 ---
 
 ## 2. System Architecture
