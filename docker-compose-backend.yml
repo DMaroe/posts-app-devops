@@ -1,0 +1,11 @@
+services:
+  backend:
+    image: rmitdominichynes/sdo-2025:backend
+    container_name: backend-service
+    environment:
+      PORT: 8080
+      DB_USER: foo-user
+      DB_PASSWORD: secret-foo-password
+      DB_HOST: ${DB_HOST}  
+    ports:
+      - "8080:8080"

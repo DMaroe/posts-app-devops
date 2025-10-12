@@ -1,0 +1,10 @@
+services:
+  db:
+    image: rmitdominichynes/sdo-2025:db
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: foo-user
+      POSTGRES_PASSWORD: secret-foo-password
+      POSTGRES_DB: posts
+    ports:
+      - "5432:5432"
