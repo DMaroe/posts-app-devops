@@ -45,7 +45,7 @@ jobs:
       # Ensure AWS credentials are set in the environment for Terraform
       - name: Apply Terraform
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve -var "path_to_ssh_public_key=${{ secrets.SDO_KEY_PUB}} -var "path_to_ssh_private_key=${{ secrets.SDO_KEY }} -var "my_ip_address=${{ secrets.MY_IP_ADDRESS }}" -var "allow_all_ip_addresses_to_access_database_server=false"
+        run: terraform apply -auto-approve -var="path_to_ssh_public_key=${{ secrets.SDO_KEY_PUB}}" -var="path_to_ssh_private_key=${{ secrets.SDO_KEY }}" -var="my_ip_address=${{ secrets.MY_IP_ADDRESS }}" -var="allow_all_ip_addresses_to_access_database_server=false"
 
       # 5. Extract Terraform outputs and pass them to Ansible
       - name: Extract Terraform outputs
