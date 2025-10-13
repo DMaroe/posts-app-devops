@@ -32,6 +32,7 @@ data "aws_ami" "ubuntu" {
 resource "aws_key_pair" "deployer_key" {
   key_name   = "app-deployer-key"
   public_key = var.path_to_ssh_public_key
+  lifecycle { create_before_destroy = true }
 }
 
 # Database Security Group - PRIVATE (no public access)
