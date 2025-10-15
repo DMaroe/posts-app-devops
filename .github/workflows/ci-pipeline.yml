@@ -105,7 +105,7 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/github_sdo_key
+          echo "${{ secrets.SDO_KEY }}" > ~/.ssh/github_sdo_key
           chmod 600 ~/.ssh/github_sdo_key
           ssh-keyscan -H $FRONTEND_PUBLIC_IP $BACKEND_PUBLIC_IP $DB_PUBLIC_IP >> ~/.ssh/known_hosts
 
