@@ -56,3 +56,101 @@ Each container needs:
     - They will also need to be configured to allow the instances to talk to each other, if the services are deployed on different instances.
     - The PostgreSQL database receives inbound traffic on port `5432`
     - The ports used by the Backend and Frontend services are configurable through the `PORT` environment variable. Otherwise, it will default to port `8081`.
+
+# COSC2759 Assignment 2 - Semester 2, 2025 (s4125656-s4125640)
+## Extended Project Documentation
+
+---
+
+## 1. Project Overview
+Briefly explain the purpose of the project and what it achieves.  
+- Purpose of the system (e.g., managing posts through CRUD operations)
+
+We are *automating the deployment process* of our Posts app, including its infrastructure creation so that we can avoid human errors during the deployment process.
+
+To achieve that we need to use the given AWS environment credentials and docker images so that when our GitHub Actions workflow runs *run the deployment script* we automatically deploy the infrastructure with the application running on it.
+
+### Section A
+
+In section A we are required to create a README.md in which it's this file. It'll be an extension of the default README.md given by the lecturers to explain what are the components we are adding to the GitHub repository.
+
+Then we are required to make a bash script that fully automates the deployment process, in which it's the "deploy.sh" file on the root folder. This `deploy.sh` script automates the entire deployment process for the project from infrastructure setup to application configuration. It first uses Terraform (inside the `infra` directory) to provision the necessary AWS EC2 instances for the database, backend, and frontend. After the infrastructure is created, it retrieves each server’s public and private IP addresses using Terraform outputs. Then, it dynamically generates an Ansible inventory file containing these IPs and SSH connection details so Ansible knows where and how to connect. Once the instances have had time to boot (a 45-second pause), the script runs an Ansible playbook to configure and deploy the services on the servers. Finally, it prints a summary showing all server addresses and where to access the deployed application.
+
+Lastly, we are required to make the connection between the backend service and database container that are deployed on at least one EC2 instance. The acceptance criteria is for the Backend Container successfully connect to the Database Container. This was done through combining Terraform and Ansible. Terraform is used to setup the EC2 instances, like their security groups in which allows the Backend Container to be able to connect to the Database container and for the Backkend Container to be reached by a user through HTTP. Ansible on the other hand is used for installing the frontend/backend/database modules through docker images inside the EC2 instance. To visualize it simply, Terraform is the architect and Ansible is the interior designer.
+
+### Section B
+
+We are required to deploy the Frontend container as well by using the same logic as the backend and database where we use a docker image to contain the Frontend file. 
+
+To connect Frontend and Backend we dont need to do anything specifiic, just by pulling the docker image is enough. But what we need to take a look at is the port in security group settings to allow the connection better.
+
+### Section C
+
+To deploy Frontend, Backend, and Database containers we install docker via Ansible 'playbook.yml'. It starts with the bash script 'deploy.sh' where it starts the Terraform to create 3 EC2 containers, then the bash script runs Ansible to pull each respective service's containers via docker. Then we have 3 EC2 instances deployed with separate instances.
+
+GitHub actions workflow
+
+### Section D
+---
+
+## 2. System Architecture
+Describe how the services interact with each other.  
+- **Architecture Diagram:**  
+  *(Insert or describe a diagram showing Frontend ↔ Backend ↔ Database)*  
+- **Data Flow:** Explain how requests move through the system.  
+- **Ports and Communication:** Note which ports each service uses and how they connect.  
+
+---
+
+## 3. Development Process
+Outline the development steps and workflow.  
+- Setting up local development environment  
+- Key challenges faced during development  
+- Solutions or debugging methods you applied  
+- Tools and libraries used  
+
+## 4. Implementation Details
+Provide technical explanations of each component.  
+### Backend
+- Routes, endpoints, and database integration  
+- How environment variables are used  
+- Interaction with PostgreSQL  
+
+### Frontend
+- UI layout and key pages  
+- API call structure and error handling  
+- Environment variable setup for BACKEND_URL  
+
+### Database
+---
+
+## 5. Docker & Deployment Setup
+Explain how you containerized and deployed the project.  
+- Overview of `docker-compose.yml`  
+- Steps for running locally (`docker compose up -d`)  
+- Steps for deploying to EC2  
+- Common issues and how you resolved them (e.g., port conflicts, missing environment variables)  
+
+---
+
+## 6. Challenges & Lessons Learned
+Reflect on what you encountered and learned.  
+- Technical or deployment challenges  
+- Key takeaways about Docker, EC2, or service communication  
+- Ideas for future improvements  
+
+---
+
+## 7. References & Resources
+List any documentation, tutorials, or guides you used.  
+- Official Docker / PostgreSQL / AWS documentation  
+- RMIT lab or assignment references  
+- Online resources or guides  
+
+---
+
+## 8. Appendix
+Include any supporting information.  
+- Example `.env` file  
+- Useful Docker or deployment commands  
+- Configuration notes

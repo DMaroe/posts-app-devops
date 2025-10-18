@@ -1,0 +1,115 @@
+name: Assignment 2 - S4125640 - S4125656
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  deploy:
+    name: Deploy with Terraform & Ansible
+    runs-on: ubuntu-latest
+
+    env:
+      TF_WORKING_DIR: ./infra
+      ANSIBLE_DIR: ./ansible
+
+    steps:
+      # 1. Checkout code repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up Terraform
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      # 3. Configure AWS credentials using GitHub Secrets
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1 
+
+      # 4. Terraform Init & Apply
+      - name: Initialize Terraform
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+      - name: Destroy Previous Terraform State
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform destroy -auto-approve -var="path_to_ssh_public_key=${{ secrets.SDO_KEY_PUB}}" -var="path_to_ssh_private_key=${{ secrets.SDO_KEY }}" -var="my_ip_address=${{ secrets.MY_IP_ADDRESS }}" -var="allow_all_ip_addresses_to_access_database_server=false" 
+      - name: Wait for Terraform to destroy properly
+        run: sleep 45
+      # Ensure AWS credentials are set in the environment for Terraform
+      - name: Apply Terraform
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve -var="path_to_ssh_public_key=${{ secrets.SDO_KEY_PUB}}" -var="path_to_ssh_private_key=${{ secrets.SDO_KEY }}" -var="my_ip_address=${{ secrets.MY_IP_ADDRESS }}" -var="allow_all_ip_addresses_to_access_database_server=false"
+
+      # 5. Extract Terraform outputs and pass them to Ansible
+      - name: Extract Terraform outputs
+        id: tf_outputs
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          echo "DB_PUBLIC_IP=$(terraform output -raw db_server_public_ip)" >> $GITHUB_ENV
+          echo "DB_PRIVATE_IP=$(terraform output -raw db_server_private_ip)" >> $GITHUB_ENV
+          echo "BACKEND_PUBLIC_IP=$(terraform output -raw backend_server_public_ip)" >> $GITHUB_ENV
+          echo "BACKEND_PRIVATE_IP=$(terraform output -raw backend_server_private_ip)" >> $GITHUB_ENV
+          echo "FRONTEND_PUBLIC_IP=$(terraform output -raw frontend_server_public_ip)" >> $GITHUB_ENV
+
+      # 6. Generate Ansible inventory dynamically
+      - name: Generate Ansible inventory
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        run: |
+          cat > inventory.yml <<EOF
+          all:
+            children:
+              database:
+                hosts:
+                  db_server:
+                    ansible_host: $DB_PUBLIC_IP
+                    ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+                    ansible_user: ubuntu
+
+              backend:
+                hosts:
+                  backend_server:
+                    ansible_host: $BACKEND_PUBLIC_IP
+                    ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+                    ansible_user: ubuntu
+                    db_private_ip: $DB_PRIVATE_IP
+
+              frontend:
+                hosts:
+                  frontend_server:
+                    ansible_host: $FRONTEND_PUBLIC_IP
+                    ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+                    ansible_user: ubuntu
+                    backend_public_ip: $BACKEND_PUBLIC_IP
+          EOF
+
+      # 7. Wait for instances to boot
+      - name: Wait for instances
+        run: sleep 45
+
+      # 8. Install Ansible
+      - name: Install Ansible
+        run: sudo apt-get update && sudo apt-get install -y ansible
+
+      # 9. Add your SSH private key (from GitHub Secrets)
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SDO_KEY }}" > ~/.ssh/github_sdo_key
+          chmod 600 ~/.ssh/github_sdo_key
+          ssh-keyscan -H $FRONTEND_PUBLIC_IP $BACKEND_PUBLIC_IP $DB_PUBLIC_IP >> ~/.ssh/known_hosts
+
+      # 10. Run the Ansible playbook
+      - name: Run Ansible playbook
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        run: ansible-playbook -i inventory.yml playbook.yml
