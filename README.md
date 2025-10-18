@@ -1,156 +1,417 @@
-# COSC2759 Assignment 2 - Semester 2, 2025
-
-# Services
-
-
-## Backend
-This is the Backend Posts Service. It is responsible for talking to the Posts DB, and exposing an internal HTTP API for managing Posts.
-
-### Environment Variables
-| Environment Variable | Purpose                                                 |
-|----------------------|---------------------------------------------------------|
-| PORT                 | Which port will the service listen on for HTTP requests |
-| DB_USER              | Username for connecting to the Backend DB               |
-| DB_PASSWORD          | Password for connecting to the Backend DB               |
-| DB_HOST              | Hostname/Network address for the Backend DB             |
-
-### Image
-The Backend service image is available at `rmitdominichynes/sdo-2025:backend`.
-
-### Dependencies
-The Backend service depends on a PostgreSQL database, with the required migrations. An image for this has been provided, available at `rmitdominichynes/sdo-2025:db`.
-
-### Database Configuration
-The PostgreSQL Databse container also requires some environment variables to be configured.
-
-|  Environment Variable        |  Purpose                                                  |
-|------------------------------|-----------------------------------------------------------|
-|  POSTGRES_USER               | Username for the Backend Service to use to connect        |
-|  POSTGRES_PASSWORD           | Password for the Backend Service to use to connect        |
-|  POSTGRES_DB                 | "posts"                                                   |
-
-## Frontend
-This is the Frontend Posts Service. It is responsible for serving a UI to users over HTTP. This UI allows them to view and manage Posts.
-
-### Environment Variables
-| Environment Variable | Purpose                                                 |
-|----------------------|---------------------------------------------------------|
-| PORT                 | Which port will the service listen on for HTTP requests |
-| BACKEND_URL          | Fully qualified URL for reaching the Backend Service    |
-
-### Image
-The Frontend service image is available at `rmitdominichynes/sdo-2025:frontend`.
-
-
-# Running The Services Locally (In Docker)
-1. Run `docker compose up -d` to start the two services, and a postgres database container.
-2. View the Frontend Posts Service at `http://localhost:8081`, and the Backend Posts Service at `http://localhost:8080`.
-
-# Deploying The Services
-
-The services can be deployed to EC2. 
-
-Each container needs: 
-- The correct environment variables configured (refer to the above sections)
-- Security Groups will need to be configured to allow traffic to reach the instances. 
-    - They will also need to be configured to allow the instances to talk to each other, if the services are deployed on different instances.
-    - The PostgreSQL database receives inbound traffic on port `5432`
-    - The ports used by the Backend and Frontend services are configurable through the `PORT` environment variable. Otherwise, it will default to port `8081`.
-
 # COSC2759 Assignment 2 - Semester 2, 2025 (s4125656-s4125640)
 ## Extended Project Documentation
+**Students:** 
+- Dhiwa Arya Kusumah - S4125640
+- Dylan Dahran Pribadi - S4125656  
 
----
 
 ## 1. Project Overview
-Briefly explain the purpose of the project and what it achieves.  
-- Purpose of the system (e.g., managing posts through CRUD operations)
+This project implements a fully automated deployment pipeline for a three-tier web application (Posts App) on AWS infrastructure. The solution uses Infrastructure as Code (Terraform) and Configuration Management (Ansible) to provision and configure all resources without manual intervention.
 
-We are *automating the deployment process* of our Posts app, including its infrastructure creation so that we can avoid human errors during the deployment process.
+## 2. Architecture Progression
 
-To achieve that we need to use the given AWS environment credentials and docker images so that when our GitHub Actions workflow runs *run the deployment script* we automatically deploy the infrastructure with the application running on it.
+### Section B: Single Instance (Baseline)
+```
+Internet → EC2 Instance (Frontend:8081 → Backend:8080 → Database:5432)
+```
+**Purpose:** Validate automation basics and container networking
+
+### Section C: Separated Services (Production-Ready)
+```
+Internet → Frontend EC2:8081 → Backend EC2:8080 → Database EC2:5432
+          (Public)              (Public)             (Private IP only)
+```
+**Purpose:** Security isolation and GitHub Actions CI/CD
+
+### Section D: High Availability (Enterprise-Grade)
+```
+Internet → Frontend ALB → [Frontend EC2 #1, Frontend EC2 #2]
+               ↓
+          Backend ALB → [Backend EC2 #1, Backend EC2 #2]
+               ↓
+          Database EC2 (Single instance)
+```
+**Purpose:** Load balancing, health checks, zero-downtime deployments.
+
+## 3. Quick Start
+
+### Prerequisites
+- AWS Learner Lab credentials configured in `~/.aws/credentials`
+- SSH key pair: `~/.ssh/github_sdo_key`
+- Terraform, Ansible, jq installed
+
+### Deployment steps (Local)
+
+1. **Clone and configure:**
+```bash
+git clone 
+cd assignment-2-s4125656-s4125640
+
+# Fill infra/you.auto.tfvars with:
+# path_to_ssh_public_key = "~/.ssh/github_sdo_key.pub"
+```
+
+2. **Run deployment:**
+```bash
+bash deploy.sh
+```
+
+3. **Access application:**
+- Section B/C: `http://<INSTANCE_IP>:8081`
+- Section D: `http://<ALB_DNS>` (displayed at end of deployment)
+
+### Deployment steps (Github Workflow)
+
+1. Set up github secrets
+
+## 4. Learning From Each Section
+**Important Notes**: The learning from each section does not necessarily follow assignment progression for example the bash script is supposed to be done in Section A but we implement it later on when doing Section B
 
 ### Section A
 
-In section A we are required to create a README.md in which it's this file. It'll be an extension of the default README.md given by the lecturers to explain what are the components we are adding to the GitHub repository.
+**Challenge** : Deploy backend and database containers on a single EC2 instance and document our approach.
 
-Then we are required to make a bash script that fully automates the deployment process, in which it's the "deploy.sh" file on the root folder. This `deploy.sh` script automates the entire deployment process for the project from infrastructure setup to application configuration. It first uses Terraform (inside the `infra` directory) to provision the necessary AWS EC2 instances for the database, backend, and frontend. After the infrastructure is created, it retrieves each server’s public and private IP addresses using Terraform outputs. Then, it dynamically generates an Ansible inventory file containing these IPs and SSH connection details so Ansible knows where and how to connect. Once the instances have had time to boot (a 45-second pause), the script runs an Ansible playbook to configure and deploy the services on the servers. Finally, it prints a summary showing all server addresses and where to access the deployed application.
+**What We Learned**
 
-Lastly, we are required to make the connection between the backend service and database container that are deployed on at least one EC2 instance. The acceptance criteria is for the Backend Container successfully connect to the Database Container. This was done through combining Terraform and Ansible. Terraform is used to setup the EC2 instances, like their security groups in which allows the Backend Container to be able to connect to the Database container and for the Backkend Container to be reached by a user through HTTP. Ansible on the other hand is used for installing the frontend/backend/database modules through docker images inside the EC2 instance. To visualize it simply, Terraform is the architect and Ansible is the interior designer.
+#### 1. Terraform basics
+**Problem:** Creating AWS resources manually in the Console is error-prone and not repeatable.
 
+**Solution:** Use Terraform to define infrastructure declaratively.
+```hcl
+# Create EC2 instance with code instead of clicking
+resource "aws_instance" "app_server" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  key_name      = aws_key_pair.deployer_key.key_name
+  vpc_security_group_ids = [aws_security_group.app_server_sg.id]
+}
+```
+
+**Why This Matters:**
+- Same code produces same infrastructure every time
+- Changes are version controlled in Git
+- Can review infrastructure changes like code reviews
+
+**Learning**: Creating the EC2 instance in terraform is straightforward especially after following the labs tutorial. However, we did realized that by using terraform it's really easier to think from architectural standpoint
+
+#### 2. Security Groups
+**Problem** Need to allow HTTP traffic but keep instance secure.
+**Solution:** Define specific ingress/egress rules.
+```hcl
+resource "aws_security_group" "app_server_sg" {
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    cidr_blocks = ["0.0.0.0/0"]  # Allow HTTP from anywhere
+  }
+  
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    cidr_blocks = ["0.0.0.0/0"]  # SSH for management
+  }
+  
+  egress {
+    from_port   = 0
+    to_port     = 0
+    cidr_blocks = ["0.0.0.0/0"]  # Allow all outbound
+  }
+}
+```
+
+**Learning**: Setting up the corect Inbound and Outbound rules is crucial especially when the EC2 have to be able to download the Docker Images
+
+#### 3. Ansible
+**Problem:** After Terraform creates the instance, we still need to SSH in and manually install Docker, start containers, etc.
+
+**Solution:** Ansible playbook automates all configuration steps.
+```yaml
+tasks:
+  - name: "Install Docker"
+    apt:
+      name: docker-ce
+      state: present
+  
+  - name: "Run docker-compose"
+    community.docker.docker_compose_v2:
+      project_src: /home/ubuntu/app
+```
+
+**Learning**: Initially we thought that cloning the code and running the docker-compose.yml is a good idea but turns out copying the exisiting docker-compose file and send it to the EC2 instances proven to be more lightweight and faster solution.
+
+#### 4. Docker Networking 
+**Problem:** Backend container needs to talk to database container.
+
+**Solution:** Both containers on same Docker network, backend uses container name as hostname.
+```yaml
+# docker-compose.yml
+  backend:
+    image: rmitdominichynes/sdo-2025:backend
+    container_name: backend-service
+    environment:
+      PORT: 8080
+      DB_USER: foo-user
+      DB_PASSWORD: secret-foo-password
+      DB_HOST: ${DB_HOST}  
+    ports:
+      - "8080:8080"
+```
+
+**Learning**: Docker DNS resolves container names to IPs automatically.
+
+#### 5. Key Files created:
+- `infra/main.tf` - Defines EC2 instance, security group, SSH key
+- `ansible/playbook.yml` - Installs Docker, deploys containers
+
+#### 6. Challenges Faced
+1. **Missing egress rule:** Instance couldn't download Docker images - learned egress rules are essential
+2. **Docker permission denied:** User needs to be in `docker` group AND SSH session reset
+3. **Environment variables:** Learned to use `.env` files for container configuration
+---
 ### Section B
 
-We are required to deploy the Frontend container as well by using the same logic as the backend and database where we use a docker image to contain the Frontend file. 
+#### 1. Bash Script
+```bash
+#!/bin/bash
+# 1. Terraform creates infrastructure
+terraform apply -auto-approve
 
-To connect Frontend and Backend we dont need to do anything specifiic, just by pulling the docker image is enough. But what we need to take a look at is the port in security group settings to allow the connection better.
+# 2. Extract instance IP from Terraform
+SERVER_IP=$(terraform output -raw app_server_public_ip)
+
+# 3. Generate Ansible inventory dynamically
+cat > ansible/inventory.yml <<EOF
+all:
+  hosts:
+    app_server:
+      ansible_host: $SERVER_IP
+EOF
+
+# 4. Wait for instance to boot
+sleep 30
+
+# 5. Run Ansible to configure and deploy
+ansible-playbook playbook.yml
+```
+
+**Why This Script Matters:** Reduces deployment from a lot of manual steps to one command: `bash deploy.sh`
+
+**Learning** Using environment variables, cat and echo proven very helpful during development, and also it is easier for us to fix a little problem in the ansible or terraform and just rerun the bash script.
+
+#### 2. Terraform and Ansible
+There's not a significant difference from Section it is just now we have to run the frontend container which is straightforward.
+
+---
 
 ### Section C
+**Challenge** : Deploy each service on its own EC2 instance for security isolation and implement CI/CD with GitHub Actions.
 
-To deploy Frontend, Backend, and Database containers we install docker via Ansible 'playbook.yml'. It starts with the bash script 'deploy.sh' where it starts the Terraform to create 3 EC2 containers, then the bash script runs Ansible to pull each respective service's containers via docker. Then we have 3 EC2 instances deployed with separate instances.
+#### 1. Security Group
+**Problem:** How does backend securely connect to database without exposing database to internet?
 
-GitHub actions workflow
+**Solution**: Referencing to a security group, example db security group to connect to backend instance
+```hcl
+resource "aws_security_group" "db_sg" {
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    security_groups = [aws_security_group.backend_sg.id]  # Only backend SG!
+  }
+}
+```
+
+**Why This is Better:**
+- Can't be bypassed.
+- Works even if backend IP changes.
+
+#### 2. Dynamic Inventory Generation
+**Problem:** Each deployment creates instances with different IPs.
+
+**Solution:** Generate Ansible inventory from Terraform outputs.
+```bash
+# Extract IPs from Terraform
+DB_PRIVATE_IP=$(terraform output -raw db_server_private_ip)
+BACKEND_PUBLIC_IP=$(terraform output -raw backend_server_public_ip)
+FRONTEND_PUBLIC_IP=$(terraform output -raw frontend_server_public_ip)
+
+# Generate inventory file
+cat > ansible/inventory.yml <<EOF
+all:
+  children:
+    database:
+      hosts:
+        db_server:
+          ansible_host: $DB_PUBLIC_IP
+    backend:
+      hosts:
+        backend_server:
+          ansible_host: $BACKEND_PUBLIC_IP
+          db_private_ip: $DB_PRIVATE_IP
+EOF
+```
+
+**Learning:** Infrastructure as Code means even configuration files can be generated programmatically.
+
+#### 3. Github Actions CI/CD 
+Automate deployment on every push to `main` branch.
+
+**Workflow Structure:**
+```yaml
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    steps:
+      - Checkout code
+      - Configure AWS credentials (from GitHub Secrets)
+      - Run Terraform
+      - Extract outputs
+      - Generate inventory
+      - Run Ansible
+```
+
+**Learning**: Use github secrets to store .env 
+
+### Challenges & Solutions of Section C
+**Challenge 1: Ansible SSH Connection Timing**
+- **Problem:** Ansible tries to connect before EC2 fully boots
+- **Solution:** Add wait tasks in playbook
+```yaml
+- name: "Wait for SSH"
+  wait_for_connection:
+    timeout: 180
+```
+
+**Challenge 2: Docker Group Membership**
+- **Problem:** Adding user to docker group doesn't take effect immediately
+- **Solution:** Reset SSH connection
+```yaml
+- name: "Add user to docker group"
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: "Reset connection"
+  meta: reset_connection
+```
+
+---
 
 ### Section D
+**Challenge**: Deploy multiple instances per service with Application Load Balancers for fault tolerance.
+
+**What we Learned**
+
+#### 1. Horizontal Scaling
+**Concept:** Run 2+ instances of each service for redundancy.
+
+**Implementation with Terraform `count`:**
+```hcl
+resource "aws_instance" "frontend_server" {
+  count         = 2  # Creates 2 identical instances
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t2.micro"
+  
+  tags = {
+    Name = "Frontend Server ${count.index + 1}"
+  }
+}
+```
+**Why this matters?**: Ensure High availability even if one instance is down there's still another one.
+
+#### 2. **Application Load Balancer (ALB)**
+**Problem:** Users shouldn't connect to individual instance IPs (what if instance fails?).
+
+**Solution:** ALB distributes traffic and health-checks instances.
+
+**Components:**
+1. **Load Balancer:** Entry point with DNS name
+2. **Target Group:** Defines health check rules
+3. **Targets:** The actual instances receiving traffic
+4. **Listener:** Port 80 → forward to target group
+```hcl
+resource "aws_lb" "frontend_alb" {
+  name               = "frontend-alb"
+  load_balancer_type = "application"
+  subnets            = data.aws_subnets.default.ids  # Must span 2+ AZs
+}
+
+resource "aws_lb_target_group" "frontend_tg" {
+  port     = 8081
+  protocol = "HTTP"
+  vpc_id   = data.aws_vpc.default.id
+  
+  health_check {
+    path                = "/"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 15
+    interval            = 30
+  }
+}
+
+resource "aws_lb_target_group_attachment" "frontend_attachment" {
+  count            = 2
+  target_group_arn = aws_lb_target_group.frontend_tg.arn
+  target_id        = aws_instance.frontend_server[count.index].id
+  port             = 8081
+}
+```
+
+#### 4. ALB Listener Ports 
+**Problem We Hit:** Frontend container runs on 8081, but ALB listens on port 80.
+
+**Wrong Config:**
+```yaml
+# docker-compose-frontend.yml
+BACKEND_URL: http://${BACKEND_HOST}:8080  
+```
+
+**Correct Config:**
+```yaml
+BACKEND_URL: http://${BACKEND_HOST}  # Port 80 is default for HTTP
+```
+
+**Learning:** ALB listener port (80) is not Target port (8081).
+
 ---
 
-## 2. System Architecture
-Describe how the services interact with each other.  
-- **Architecture Diagram:**  
-  *(Insert or describe a diagram showing Frontend ↔ Backend ↔ Database)*  
-- **Data Flow:** Explain how requests move through the system.  
-- **Ports and Communication:** Note which ports each service uses and how they connect.  
+### Real world benefits for Yeetcode
+**Without ALB (Section C):**
+- Instance fails → App down until manual recovery
+- Deployment → Take app offline, update, bring back up
 
----
+**With ALB (Section D):**
+- Instance fails → ALB auto-routes to healthy instance
+- Deployment → Update one instance at a time (rolling deployment)
 
-## 3. Development Process
-Outline the development steps and workflow.  
-- Setting up local development environment  
-- Key challenges faced during development  
-- Solutions or debugging methods you applied  
-- Tools and libraries used  
+## Project Structure
+```
+assignment-2-s4125656-s4125640/
+├── README.md                        
+├── deploy.sh                        ← One-command deployment
+│
+├── infra/                           ← Terraform (Infrastructure)
+│   ├── main.tf                      ← AWS resources
+│   ├── variables.tf                 ← Input variables
+│   └── you.auto.tfvars              ← Your values (gitignored)
+│
+├── ansible/                         ← Ansible (Configuration)
+│   ├── ansible.cfg                  ← Ansible settings
+│   ├── playbook.yml                 ← Setup tasks
+│   └── inventory.yml                ← Auto-generated
+│
+├── docker-compose-db.yml            ← Database container
+├── docker-compose-backend.yml       ← Backend container
+├── docker-compose-frontend.yml      ← Frontend container
+│                     
+└── .github/workflows/
+    └── deploy.yml                   ← CI/CD pipeline
+```
 
-## 4. Implementation Details
-Provide technical explanations of each component.  
-### Backend
-- Routes, endpoints, and database integration  
-- How environment variables are used  
-- Interaction with PostgreSQL  
 
-### Frontend
-- UI layout and key pages  
-- API call structure and error handling  
-- Environment variable setup for BACKEND_URL  
 
-### Database
----
-
-## 5. Docker & Deployment Setup
-Explain how you containerized and deployed the project.  
-- Overview of `docker-compose.yml`  
-- Steps for running locally (`docker compose up -d`)  
-- Steps for deploying to EC2  
-- Common issues and how you resolved them (e.g., port conflicts, missing environment variables)  
-
----
-
-## 6. Challenges & Lessons Learned
-Reflect on what you encountered and learned.  
-- Technical or deployment challenges  
-- Key takeaways about Docker, EC2, or service communication  
-- Ideas for future improvements  
-
----
-
-## 7. References & Resources
-List any documentation, tutorials, or guides you used.  
-- Official Docker / PostgreSQL / AWS documentation  
-- RMIT lab or assignment references  
-- Online resources or guides  
-
----
-
-## 8. Appendix
-Include any supporting information.  
-- Example `.env` file  
-- Useful Docker or deployment commands  
-- Configuration notes
