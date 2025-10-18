@@ -48,7 +48,9 @@ git clone
 cd assignment-2-s4125656-s4125640
 
 # Fill infra/you.auto.tfvars with:
-# path_to_ssh_public_key = "~/.ssh/github_sdo_key.pub"
+# path_to_ssh_public_key="~/.ssh/github_sdo_key.pub" 
+# path_to_ssh_private_key="~/.ssh/github_sdo_key"
+# my_ip_address="<Your IP address>" 
 ```
 
 2. **Run deployment:**
@@ -63,6 +65,16 @@ bash deploy.sh
 ### Deployment steps (Github Workflow)
 
 1. Set up github secrets
+```bash
+AWS_ACCESS_KEY_ID         (from AWS Learner Lab)
+AWS_SECRET_ACCESS_KEY     (from AWS Learner Lab)
+AWS_SESSION_TOKEN         (from AWS Learner Lab)
+SDO_KEY_PUB               (your public key content)
+SDO_KEY                   (your private key content)
+MY_IP_ADDRESS             (your public IP)
+```
+
+2. Push / pull request to main branch to run the workflow
 
 ## 4. Learning From Each Section
 **Important Notes**: The learning from each section does not necessarily follow assignment progression for example the bash script is supposed to be done in Section A but we implement it later on when doing Section B
@@ -78,7 +90,6 @@ bash deploy.sh
 
 **Solution:** Use Terraform to define infrastructure declaratively.
 ```hcl
-# Create EC2 instance with code instead of clicking
 resource "aws_instance" "app_server" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = "t2.micro"
