@@ -1,4 +1,3 @@
-# DATABASE SERVER SETUP
 - name: "Setup database server"
   hosts: database
   remote_user: ubuntu
@@ -86,8 +85,7 @@
         project_src: /home/ubuntu/app
       become: false
 
-# BACKEND SERVER SETUP
-- name: "Setup backend server"
+- name: "Setup backend servers"
   hosts: backend
   remote_user: ubuntu
   become: true
@@ -188,8 +186,7 @@
         project_src: /home/ubuntu/app
       become: false
 
-# FRONTEND SERVER SETUP
-- name: "Setup frontend server"
+- name: "Setup frontend servers"
   hosts: frontend
   remote_user: ubuntu
   become: true
@@ -274,16 +271,16 @@
     - name: "Create .env file for frontend"
       copy:
         content: |
-          BACKEND_HOST={{ backend_public_ip }}
+          BACKEND_HOST={{ backend_alb_dns }}
         dest: /home/ubuntu/app/.env
         owner: ubuntu
         group: ubuntu
 
-    - name: "Wait for backend to be ready"
+    - name: "Wait for backend ALB to be ready"
       wait_for:
-        host: "{{ backend_public_ip }}"
-        port: 8080
-        timeout: 60
+        host: "{{ backend_alb_dns }}"
+        port: 80
+        timeout: 120
 
     - name: "Run docker-compose for frontend"
       community.docker.docker_compose_v2:

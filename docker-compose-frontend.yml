@@ -4,6 +4,6 @@ services:
     container_name: frontend-service
     environment:
       PORT: 8081
-      BACKEND_URL: http://${BACKEND_HOST}:8080 
+      BACKEND_URL: http://${BACKEND_HOST}  
     ports:
       - "8081:8081"
