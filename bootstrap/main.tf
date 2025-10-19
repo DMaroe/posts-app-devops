@@ -39,19 +39,30 @@ resource "aws_s3_bucket_public_access_block" "block_public_access" {
   restrict_public_buckets = false
 }
 
-# Optional: DynamoDB table for state locking
-resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "terraform-locks"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
+# This gives permissions to your IAM user or role to access the bucket
+resource "aws_s3_bucket_policy" "terraform_state_policy" {
+  bucket = aws_s3_bucket.terraform_state.id
 
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  tags = {
-    Name        = "Terraform State Lock Table"
-    Environment = "prod"
-  }
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "TerraformStateAccess"
+        Effect    = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::975050109449:user/your-terraform-user" # Replace with your IAM ARN
+        }
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.terraform_state.arn,
+          "${aws_s3_bucket.terraform_state.arn}/*"
+        ]
+      }
+    ]
+  })
 }
