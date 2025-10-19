@@ -39,30 +39,4 @@ resource "aws_s3_bucket_public_access_block" "block_public_access" {
   restrict_public_buckets = false
 }
 
-# This gives permissions to your IAM user or role to access the bucket
-resource "aws_s3_bucket_policy" "terraform_state_policy" {
-  bucket = aws_s3_bucket.terraform_state.id
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "TerraformStateAccess"
-        Effect    = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::975050109449:user/your-terraform-user" # Replace with your IAM ARN
-        }
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.terraform_state.arn,
-          "${aws_s3_bucket.terraform_state.arn}/*"
-        ]
-      }
-    ]
-  })
-}
