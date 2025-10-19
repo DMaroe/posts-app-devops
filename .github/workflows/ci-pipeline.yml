@@ -53,9 +53,25 @@ jobs:
 
       # 5. Extract Terraform outputs and pass them to Ansible
       - name: Extract Terraform outputs
-        id: tf_outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
+          echo "Extracting server IPs and ALB DNS names..."
+          DB_PUBLIC_IP=$(terraform output -raw db_server_public_ip)
+          DB_PRIVATE_IP=$(terraform output -raw db_server_private_ip)
+
+          BACKEND_IPS=$(terraform output -json backend_instance_ips | jq -r '.[]')
+          BACKEND_IP_ARRAY=($BACKEND_IPS)
+          BACKEND_IP_1=${BACKEND_IP_ARRAY[0]}
+          BACKEND_IP_2=${BACKEND_IP_ARRAY[1]}
+
+          FRONTEND_IPS=$(terraform output -json frontend_instance_ips | jq -r '.[]')
+          FRONTEND_IP_ARRAY=($FRONTEND_IPS)
+          FRONTEND_IP_1=${FRONTEND_IP_ARRAY[0]}
+          FRONTEND_IP_2=${FRONTEND_IP_ARRAY[1]}
+
+          BACKEND_ALB_DNS=$(terraform output -raw backend_alb_dns)
+          FRONTEND_ALB_DNS=$(terraform output -raw frontend_alb_dns)
+
           echo "Database Server - Public: $DB_PUBLIC_IP, Private: $DB_PRIVATE_IP"
           echo "Backend Server 1: $BACKEND_IP_1"
           echo "Backend Server 2: $BACKEND_IP_2"
@@ -63,6 +79,16 @@ jobs:
           echo "Frontend Server 1: $FRONTEND_IP_1"
           echo "Frontend Server 2: $FRONTEND_IP_2"
           echo "Frontend ALB: $FRONTEND_ALB_DNS"
+
+          # Export variables for later steps
+          echo "DB_PUBLIC_IP=$DB_PUBLIC_IP" >> $GITHUB_ENV
+          echo "DB_PRIVATE_IP=$DB_PRIVATE_IP" >> $GITHUB_ENV
+          echo "BACKEND_IP_1=$BACKEND_IP_1" >> $GITHUB_ENV
+          echo "BACKEND_IP_2=$BACKEND_IP_2" >> $GITHUB_ENV
+          echo "FRONTEND_IP_1=$FRONTEND_IP_1" >> $GITHUB_ENV
+          echo "FRONTEND_IP_2=$FRONTEND_IP_2" >> $GITHUB_ENV
+          echo "BACKEND_ALB_DNS=$BACKEND_ALB_DNS" >> $GITHUB_ENV
+          echo "FRONTEND_ALB_DNS=$FRONTEND_ALB_DNS" >> $GITHUB_ENV
 
       # 6. Generate Ansible inventory dynamically
       - name: Generate Ansible inventory
