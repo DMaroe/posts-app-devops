@@ -74,7 +74,9 @@ SDO_KEY                   (your private key content)
 MY_IP_ADDRESS             (your public IP)
 ```
 
-2. Push / pull request to main branch to run the workflow
+2. Do terraform init and terraform apply in ./bootstrap to create the S3 bucket for storing terraform state.
+
+3. Push / pull request to main branch to run the workflow
 
 ## 4. Learning From Each Section
 **Important Notes**: The learning from each section does not necessarily follow assignment progression for example the bash script is supposed to be done in Section A but we implement it later on when doing Section B
@@ -388,6 +390,26 @@ BACKEND_URL: http://${BACKEND_HOST}  # Port 80 is default for HTTP
 ```
 
 **Learning:** ALB listener port (80) is not Target port (8081).
+
+#### 5. S3 Bucket for Terraform State
+**Tell Terraform to store TF State in the bucket**
+```yaml
+# infra/main.tf
+backend "s3" {
+    bucket         = "s4125640-s4125656-bucket"
+    key            = "terraform.tfstate" 
+    region         = "us-east-1"
+    encrypt        = true
+
+```
+**Comment: with this S3 works as the remote backend to store terraform state**
+
+**Bucket Creation:** create a bucket using terraform in ./bootstrap/main.tf
+**Bucket Config:**
+1. **region: us-east-1**
+2. **name: s4125640-s4125656-bucket**
+3. **versioning: enabled**
+4. **public all access: false**
 
 ---
 

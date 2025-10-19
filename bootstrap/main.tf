@@ -21,7 +21,6 @@ resource "aws_s3_bucket" "terraform_state" {
   }
 }
 
-# Optional: enable versioning for state rollback
 resource "aws_s3_bucket_versioning" "versioning" {
   bucket = aws_s3_bucket.terraform_state.id
 
@@ -30,7 +29,6 @@ resource "aws_s3_bucket_versioning" "versioning" {
   }
 }
 
-# Optional: block public access for safety
 resource "aws_s3_bucket_public_access_block" "block_public_access" {
   bucket                  = aws_s3_bucket.terraform_state.id
   block_public_acls       = false
