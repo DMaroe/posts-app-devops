@@ -16,7 +16,6 @@ jobs:
     env:
       TF_WORKING_DIR: ./infra
       ANSIBLE_DIR: ./ansible
-      BUCKET_DIR: ./bucket
 
     steps:
       # 1. Checkout code repository
@@ -39,12 +38,6 @@ jobs:
           aws-region: us-east-1 
 
       # 4. Terraform Init & Apply
-      - name: Terraform BUCKET Init and Apply
-        working-directory: ${{ env.BUCKET_DIR }}
-        run: terraform init
-      - name: Terraform BUCKET Apply
-        working-directory: ${{ env.BUCKET_DIR }}
-        run: terraform apply -auto-approve
       - name: Initialize Terraform
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
