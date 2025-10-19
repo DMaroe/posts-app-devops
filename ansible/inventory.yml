@@ -4,19 +4,19 @@ all:
       hosts:
         db_server:
           ansible_host: 3.85.243.2
-          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_ssh_private_key_file: /home/ubuntu/.ssh/github_sdo_key
           ansible_user: ubuntu
     
     backend:
       hosts:
         backend_server_1:
           ansible_host: 54.210.184.11
-          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_ssh_private_key_file: /home/ubuntu/.ssh/github_sdo_key
           ansible_user: ubuntu
           db_private_ip: 172.31.16.115
         backend_server_2:
           ansible_host: 3.80.217.109
-          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_ssh_private_key_file: /home/ubuntu/.ssh/github_sdo_key
           ansible_user: ubuntu
           db_private_ip: 172.31.16.115
     
@@ -24,11 +24,11 @@ all:
       hosts:
         frontend_server_1:
           ansible_host: 54.147.140.156
-          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_ssh_private_key_file: /home/ubuntu/.ssh/github_sdo_key
           ansible_user: ubuntu
           backend_alb_dns: backend-alb-1476970444.us-east-1.elb.amazonaws.com
         frontend_server_2:
           ansible_host: 98.89.5.156
-          ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+          ansible_ssh_private_key_file: /home/ubuntu/.ssh/github_sdo_key
           ansible_user: ubuntu
           backend_alb_dns: backend-alb-1476970444.us-east-1.elb.amazonaws.com
