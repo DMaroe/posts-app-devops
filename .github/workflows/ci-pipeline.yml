@@ -56,11 +56,13 @@ jobs:
         id: tf_outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          echo "DB_PUBLIC_IP=$(terraform output -raw db_server_public_ip)" >> $GITHUB_ENV
-          echo "DB_PRIVATE_IP=$(terraform output -raw db_server_private_ip)" >> $GITHUB_ENV
-          echo "BACKEND_PUBLIC_IP=$(terraform output -raw backend_server_public_ip)" >> $GITHUB_ENV
-          echo "BACKEND_PRIVATE_IP=$(terraform output -raw backend_server_private_ip)" >> $GITHUB_ENV
-          echo "FRONTEND_PUBLIC_IP=$(terraform output -raw frontend_server_public_ip)" >> $GITHUB_ENV
+          echo "Database Server - Public: $DB_PUBLIC_IP, Private: $DB_PRIVATE_IP"
+          echo "Backend Server 1: $BACKEND_IP_1"
+          echo "Backend Server 2: $BACKEND_IP_2"
+          echo "Backend ALB: $BACKEND_ALB_DNS"
+          echo "Frontend Server 1: $FRONTEND_IP_1"
+          echo "Frontend Server 2: $FRONTEND_IP_2"
+          echo "Frontend ALB: $FRONTEND_ALB_DNS"
 
       # 6. Generate Ansible inventory dynamically
       - name: Generate Ansible inventory
@@ -75,22 +77,32 @@ jobs:
                     ansible_host: $DB_PUBLIC_IP
                     ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
                     ansible_user: ubuntu
-
+              
               backend:
                 hosts:
-                  backend_server:
-                    ansible_host: $BACKEND_PUBLIC_IP
+                  backend_server_1:
+                    ansible_host: $BACKEND_IP_1
                     ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
                     ansible_user: ubuntu
                     db_private_ip: $DB_PRIVATE_IP
-
-              frontend:
-                hosts:
-                  frontend_server:
-                    ansible_host: $FRONTEND_PUBLIC_IP
+                  backend_server_2:
+                    ansible_host: $BACKEND_IP_2
                     ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
                     ansible_user: ubuntu
-                    backend_public_ip: $BACKEND_PUBLIC_IP
+                    db_private_ip: $DB_PRIVATE_IP
+              
+              frontend:
+                hosts:
+                  frontend_server_1:
+                    ansible_host: $FRONTEND_IP_1
+                    ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+                    ansible_user: ubuntu
+                    backend_alb_dns: $BACKEND_ALB_DNS
+                  frontend_server_2:
+                    ansible_host: $FRONTEND_IP_2
+                    ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
+                    ansible_user: ubuntu
+                    backend_alb_dns: $BACKEND_ALB_DNS
           EOF
 
       # 7. Wait for instances to boot
@@ -107,7 +119,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SDO_KEY }}" > ~/.ssh/github_sdo_key
           chmod 600 ~/.ssh/github_sdo_key
-          ssh-keyscan -H $FRONTEND_PUBLIC_IP $BACKEND_PUBLIC_IP $DB_PUBLIC_IP >> ~/.ssh/known_hosts
+          ssh-keyscan -H $FRONTEND_IP_1 $FRONTEND_IP_2 $BACKEND_IP_1 $BACKEND_IP_2 $DB_PUBLIC_IP >> ~/.ssh/known_hosts
 
       # 10. Run the Ansible playbook
       - name: Run Ansible playbook
