@@ -3,10 +3,10 @@ name: Assignment 2 - S4125640 - S4125656
 on:
   push:
     branches:
-      - task/sectionD
+      - task/pipeline
   pull_request:
     branches:
-      - task/sectionD
+      - task/pipeline
 
 jobs:
   deploy:
