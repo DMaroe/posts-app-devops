@@ -48,7 +48,7 @@ data "aws_subnets" "default" {
 # Create an SSH key pair to access the instances
 resource "aws_key_pair" "deployer_key" {
   key_name   = "app-deployer-key"
-  public_key = file(var.path_to_ssh_public_key)
+  public_key = var.path_to_ssh_public_key
   lifecycle { 
     create_before_destroy = true 
   }
