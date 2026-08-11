@@ -15,10 +15,10 @@ This is the Backend Posts Service. It is responsible for talking to the Posts DB
 | DB_HOST              | Hostname/Network address for the Backend DB             |
 
 ### Image
-The Backend service image is available at `rmitdominichynes/sdo-2025:backend`.
+The Backend service is built from `backend/Dockerfile` and pushed to our own ECR repository at `<account_id>.dkr.ecr.us-east-1.amazonaws.com/posts-app-backend`. The GitHub Actions pipeline builds and pushes this image automatically on every run (see `.github/workflows/ci-pipeline.yml`).
 
 ### Dependencies
-The Backend service depends on a PostgreSQL database, with the required migrations. An image for this has been provided, available at `rmitdominichynes/sdo-2025:db`.
+The Backend service depends on a PostgreSQL database, with the required migrations. The database image is built from `backend/DB.Dockerfile` (a thin wrapper around the official `postgres` image that bakes in our migration SQL from `backend/migrations/`) and pushed to `<account_id>.dkr.ecr.us-east-1.amazonaws.com/posts-app-db`.
 
 ### Database Configuration
 The PostgreSQL Databse container also requires some environment variables to be configured.
@@ -39,23 +39,42 @@ This is the Frontend Posts Service. It is responsible for serving a UI to users 
 | BACKEND_URL          | Fully qualified URL for reaching the Backend Service    |
 
 ### Image
-The Frontend service image is available at `rmitdominichynes/sdo-2025:frontend`.
+The Frontend service is built from `frontend/Dockerfile` and pushed to our own ECR repository at `<account_id>.dkr.ecr.us-east-1.amazonaws.com/posts-app-frontend`.
 
+## Own Images (No External Dependencies)
+All three services (backend, frontend, db) are built from Dockerfiles in this repository and hosted in our own AWS ECR repositories, provisioned by Terraform (`infra/ecr.tf`). We do not depend on any pre-built images from third parties. The GitHub Actions pipeline builds and pushes fresh images (tagged with the commit SHA and `latest`) before every deployment.
+
+EC2 instances pull these images using an IAM instance profile (`infra/iam.tf`) rather than embedded credentials, so no registry secrets are stored on the servers themselves.
 
 # Running The Services Locally (In Docker)
-1. Run `docker compose up -d` to start the two services, and a postgres database container.
-2. View the Frontend Posts Service at `http://localhost:8081`, and the Backend Posts Service at `http://localhost:8080`.
+1. Copy `.env.example` to `.env` and fill in your ECR account ID/region (or build the images locally and reference those tags instead).
+2. Run `docker compose up -d` to start all three services (frontend, backend, and a postgres database container).
+3. View the Frontend Posts Service at `http://localhost:8081`, and the Backend Posts Service at `http://localhost:8080`.
 
 # Deploying The Services
 
-The services can be deployed to EC2. 
+The services are deployed to AWS EC2 automatically via the GitHub Actions pipeline (`.github/workflows/ci-pipeline.yml`), which:
+1. Builds and pushes the backend, frontend, and db images to ECR
+2. Provisions/refreshes the EC2 instances via Terraform
+3. Configures each instance and starts the correct container via Ansible
 
 Each container needs: 
-- The correct environment variables configured (refer to the above sections)
-- Security Groups will need to be configured to allow traffic to reach the instances. 
+- The correct environment variables configured (refer to the above sections) — for EC2 deployments these are generated automatically by the Ansible playbook (`ansible/playbook.yml`) using values passed in from the pipeline
+- Security Groups will need to be configured to allow traffic to reach the instances (already handled by `infra/main.tf`)
     - They will also need to be configured to allow the instances to talk to each other, if the services are deployed on different instances.
     - The PostgreSQL database receives inbound traffic on port `5432`
     - The ports used by the Backend and Frontend services are configurable through the `PORT` environment variable. Otherwise, it will default to port `8081`.
+
+### Required GitHub Secrets
+| Secret | Purpose |
+|---|---|
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` | AWS credentials for Terraform, Ansible, and ECR push/pull |
+| `SDO_KEY` / `SDO_KEY_PUB` | SSH keypair for EC2 access |
+| `MY_IP_ADDRESS` | Restricts DB access during local testing |
+| `DB_USER` / `DB_PASSWORD` | Database credentials (no longer hardcoded in compose files) |
+
+### One-time setup
+Run `terraform apply` locally once (without `-target`) before the first pipeline run, so the ECR repositories and IAM instance profile exist. The pipeline's own destroy/apply steps are scoped to the EC2 instances only, so they never delete the ECR repos or pushed images.
 
 # COSC2759 Assignment 2 - Semester 2, 2025 (s4125656-s4125640)
 ## Extended Project Documentation

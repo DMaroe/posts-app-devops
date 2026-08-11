@@ -1,10 +1,10 @@
 services:
   db:
-    image: rmitdominichynes/sdo-2025:db
+    image: ${DB_IMAGE}
     container_name: postgres-db
     environment:
-      POSTGRES_USER: foo-user
-      POSTGRES_PASSWORD: secret-foo-password
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: posts
     ports:
       - "5432:5432"

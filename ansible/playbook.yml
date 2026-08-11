@@ -81,6 +81,25 @@
         owner: ubuntu
         group: ubuntu
 
+    - name: "Create .env file for database"
+      copy:
+        content: |
+          DB_IMAGE={{ db_image }}
+          DB_USER={{ db_user }}
+          DB_PASSWORD={{ db_password }}
+        dest: /home/ubuntu/app/.env
+        owner: ubuntu
+        group: ubuntu
+
+    - name: "Install AWS CLI"
+      apt:
+        name: awscli
+        state: present
+
+    - name: "Log in to ECR"
+      shell: "aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_registry }}"
+      become: false
+
     - name: "Run docker-compose for database"
       community.docker.docker_compose_v2:
         project_src: /home/ubuntu/app
@@ -172,10 +191,22 @@
     - name: "Create .env file for backend"
       copy:
         content: |
+          BACKEND_IMAGE={{ backend_image }}
           DB_HOST={{ db_private_ip }}
+          DB_USER={{ db_user }}
+          DB_PASSWORD={{ db_password }}
         dest: /home/ubuntu/app/.env
         owner: ubuntu
         group: ubuntu
+
+    - name: "Install AWS CLI"
+      apt:
+        name: awscli
+        state: present
+
+    - name: "Log in to ECR"
+      shell: "aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_registry }}"
+      become: false
 
     - name: "Wait for database to be ready"
       wait_for:
@@ -274,10 +305,20 @@
     - name: "Create .env file for frontend"
       copy:
         content: |
+          FRONTEND_IMAGE={{ frontend_image }}
           BACKEND_HOST={{ backend_public_ip }}
         dest: /home/ubuntu/app/.env
         owner: ubuntu
         group: ubuntu
+
+    - name: "Install AWS CLI"
+      apt:
+        name: awscli
+        state: present
+
+    - name: "Log in to ECR"
+      shell: "aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_registry }}"
+      become: false
 
     - name: "Wait for backend to be ready"
       wait_for:

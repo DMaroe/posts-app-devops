@@ -1,0 +1,14 @@
+---
+# These are overridden at runtime by the CI pipeline via:
+#   ansible-playbook -i inventory.yml playbook.yml --extra-vars "..."
+# Defaults here only support local/manual ansible-playbook runs.
+
+aws_region: us-east-1
+ecr_registry: "<account_id>.dkr.ecr.us-east-1.amazonaws.com"
+
+db_image: "{{ ecr_registry }}/posts-app-db:latest"
+backend_image: "{{ ecr_registry }}/posts-app-backend:latest"
+frontend_image: "{{ ecr_registry }}/posts-app-frontend:latest"
+
+db_user: foo-user
+db_password: secret-foo-password
