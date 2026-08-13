@@ -1,11 +1,8 @@
 # ECR repositories for our own application images.
 # These replace the lecturer-provided rmitdominichynes/sdo-2025:* images.
 #
-# NOTE: The CI pipeline runs `terraform destroy` + `apply` on EVERY run, scoped
-# with -target flags to only the EC2/security-group resources below. This is
-# deliberate: it keeps these ECR repos (and the images pushed to them) alive
-# across pipeline runs. Run `terraform apply` once locally/manually (no
-# -target) to create these repos the first time.
+# GitHub Actions applies the complete configuration before building images, so
+# these repositories exist before the workflow attempts to push to them.
 
 resource "aws_ecr_repository" "backend" {
   name                 = "posts-app-backend"

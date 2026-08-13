@@ -1,12 +1,14 @@
-name: Assignment 2 - S4125640 - S4125656
+name: Posts App AWS Deployment
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - '**'
-  pull_request:
-    branches:
-      - '**'
+      - main
+
+concurrency:
+  group: posts-app-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -29,15 +31,70 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 3. Log in to our own ECR registry
+      - name: Verify deployment identity
+        env:
+          EXPECTED_AWS_USER: github-actions-deploy
+        run: |
+          caller_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          expected_suffix=":user/$EXPECTED_AWS_USER"
+
+          if [[ "$caller_arn" != *"$expected_suffix" ]]; then
+            echo "Expected AWS IAM user '$EXPECTED_AWS_USER', but credentials belong to '$caller_arn'." >&2
+            exit 1
+          fi
+
+          echo "Authenticated as AWS IAM user '$EXPECTED_AWS_USER'."
+
+      # 3. Set up remote Terraform state and provision AWS infrastructure
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: Ensure Terraform state bucket exists
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          state_bucket="posts-app-terraform-state-$account_id"
+
+          if ! aws s3api head-bucket --bucket "$state_bucket" 2>/dev/null; then
+            aws s3api create-bucket --bucket "$state_bucket" --region "$AWS_REGION"
+          fi
+
+          aws s3api put-bucket-versioning \
+            --bucket "$state_bucket" \
+            --versioning-configuration Status=Enabled
+          aws s3api put-bucket-encryption \
+            --bucket "$state_bucket" \
+            --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          aws s3api put-public-access-block \
+            --bucket "$state_bucket" \
+            --public-access-block-configuration \
+              BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+          echo "TF_STATE_BUCKET=$state_bucket" >> "$GITHUB_ENV"
+
+      - name: Initialize Terraform
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="key=posts-app/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="encrypt=true"
+
+      - name: Apply Terraform
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_ssh_public_key: ${{ secrets.SDO_KEY_PUB }}
+        run: terraform apply -auto-approve
+
+      # 4. Build and push images after Terraform creates the ECR repositories
       - name: Login to Amazon ECR
         id: ecr_login
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 4. Build & push our own images (replaces rmitdominichynes/sdo-2025:*)
       - name: Build & push backend image
         env:
           ECR_REGISTRY: ${{ steps.ecr_login.outputs.registry }}
@@ -62,52 +119,7 @@ jobs:
           docker push $ECR_REGISTRY/posts-app-db:${{ github.sha }}
           docker push $ECR_REGISTRY/posts-app-db:latest
 
-      # 5. Set up Terraform
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.6
-
-      # 6. Terraform Init, Destroy & Apply
-      # NOTE: destroy/apply are scoped with -target to the EC2 instances,
-      # security groups, and key pair only. This deliberately leaves the ECR
-      # repos (infra/ecr.tf) and IAM role (infra/iam.tf) untouched, so pushed
-      # images and pull permissions survive across pipeline runs. ECR/IAM
-      # resources are created once via a manual `terraform apply` (no
-      # -target) the first time this project is set up.
-      - name: Initialize Terraform
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
-
-      - name: Destroy Previous EC2 Infra
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform destroy -auto-approve \
-            -var="path_to_ssh_public_key=${{ secrets.SDO_KEY_PUB}}" \
-            -var="path_to_ssh_private_key=${{ secrets.SDO_KEY }}" \
-            -var="my_ip_address=${{ secrets.MY_IP_ADDRESS }}" \
-            -var="allow_all_ip_addresses_to_access_database_server=false" \
-            -target=aws_instance.db_server \
-            -target=aws_instance.backend_server \
-            -target=aws_instance.frontend_server \
-            -target=aws_security_group.db_sg \
-            -target=aws_security_group.backend_sg \
-            -target=aws_security_group.frontend_sg \
-            -target=aws_key_pair.deployer_key
-
-      - name: Wait for Terraform to destroy properly
-        run: sleep 45
-
-      - name: Apply Terraform
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform apply -auto-approve \
-            -var="path_to_ssh_public_key=${{ secrets.SDO_KEY_PUB}}" \
-            -var="path_to_ssh_private_key=${{ secrets.SDO_KEY }}" \
-            -var="my_ip_address=${{ secrets.MY_IP_ADDRESS }}" \
-            -var="allow_all_ip_addresses_to_access_database_server=false"
-
-      # 7. Extract Terraform outputs and pass them to Ansible
+      # 5. Extract Terraform outputs and pass them to Ansible
       - name: Extract Terraform outputs
         id: tf_outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -118,7 +130,7 @@ jobs:
           echo "BACKEND_PRIVATE_IP=$(terraform output -raw backend_server_private_ip)" >> $GITHUB_ENV
           echo "FRONTEND_PUBLIC_IP=$(terraform output -raw frontend_server_public_ip)" >> $GITHUB_ENV
 
-      # 8. Generate Ansible inventory dynamically
+      # 6. Generate Ansible inventory dynamically
       - name: Generate Ansible inventory
         working-directory: ${{ env.ANSIBLE_DIR }}
         run: |
@@ -149,23 +161,25 @@ jobs:
                     backend_public_ip: $BACKEND_PUBLIC_IP
           EOF
 
-      # 9. Wait for instances to boot
+      # 7. Wait for instances to boot
       - name: Wait for instances
         run: sleep 45
 
-      # 10. Install Ansible
+      # 8. Install Ansible
       - name: Install Ansible
         run: sudo apt-get update && sudo apt-get install -y ansible
 
-      # 11. Add your SSH private key (from GitHub Secrets)
+      # 9. Add the SSH private key from GitHub Secrets
       - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SDO_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SDO_KEY }}" > ~/.ssh/github_sdo_key
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/github_sdo_key
           chmod 600 ~/.ssh/github_sdo_key
           ssh-keyscan -H $FRONTEND_PUBLIC_IP $BACKEND_PUBLIC_IP $DB_PUBLIC_IP >> ~/.ssh/known_hosts
 
-      # 12. Run the Ansible playbook, passing the images we just built and
+      # 10. Run the Ansible playbook, passing the images we just built and
       #     DB credentials sourced from GitHub Secrets (not hardcoded).
       - name: Run Ansible playbook
         working-directory: ${{ env.ANSIBLE_DIR }}
@@ -181,7 +195,7 @@ jobs:
             db_user=${{ secrets.DB_USER }} \
             db_password=${{ secrets.DB_PASSWORD }}"
 
-      # 13. Print summary
+      # 11. Print summary
       - name: Deployment summary
         run: |
           echo "Database server:  $DB_PUBLIC_IP"

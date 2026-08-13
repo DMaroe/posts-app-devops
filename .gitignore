@@ -1,6 +1,10 @@
 node_modules
 .env
-.terraform
-terraform.tfstate
-terraform.tfstate.backup
-.terraform.lock.hcl
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+
+# Provider locks are safe and should be committed for reproducible installs.
+!.terraform.lock.hcl

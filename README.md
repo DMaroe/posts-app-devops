@@ -54,8 +54,8 @@ EC2 instances pull these images using an IAM instance profile (`infra/iam.tf`) r
 # Deploying The Services
 
 The services are deployed to AWS EC2 automatically via the GitHub Actions pipeline (`.github/workflows/ci-pipeline.yml`), which:
-1. Builds and pushes the backend, frontend, and db images to ECR
-2. Provisions/refreshes the EC2 instances via Terraform
+1. Provisions/updates the AWS infrastructure via Terraform
+2. Builds and pushes the backend, frontend, and db images to ECR
 3. Configures each instance and starts the correct container via Ansible
 
 Each container needs: 
@@ -68,13 +68,22 @@ Each container needs:
 ### Required GitHub Secrets
 | Secret | Purpose |
 |---|---|
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` | AWS credentials for Terraform, Ansible, and ECR push/pull |
-| `SDO_KEY` / `SDO_KEY_PUB` | SSH keypair for EC2 access |
-| `MY_IP_ADDRESS` | Restricts DB access during local testing |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Long-lived credentials for the `github-actions-deploy` IAM user |
+| `SDO_KEY` / `SDO_KEY_PUB` | SSH private/public keypair used by GitHub Actions for EC2 access |
 | `DB_USER` / `DB_PASSWORD` | Database credentials (no longer hardcoded in compose files) |
 
-### One-time setup
-Run `terraform apply` locally once (without `-target`) before the first pipeline run, so the ECR repositories and IAM instance profile exist. The pipeline's own destroy/apply steps are scoped to the EC2 instances only, so they never delete the ECR repos or pushed images.
+The workflow does not use `AWS_SESSION_TOKEN` or any local `.tfvars` file. The
+Terraform public-key input is supplied from `SDO_KEY_PUB`; the private key is
+used only when Ansible connects to the provisioned EC2 instances. Local
+`*.tfvars` files are ignored by Git to prevent accidental commits.
+
+### Deployment state
+GitHub Actions creates an encrypted, versioned S3 bucket named
+`posts-app-terraform-state-<aws-account-id>` and stores Terraform state there.
+No local Terraform apply, local SSH key, local IP address, or local `.tfvars`
+file is required. The `github-actions-deploy` IAM user therefore needs access
+to this state bucket in addition to the EC2, ECR, and IAM permissions needed by
+the Terraform configuration.
 
 # COSC2759 Assignment 2 - Semester 2, 2025 (s4125656-s4125640)
 ## Extended Project Documentation

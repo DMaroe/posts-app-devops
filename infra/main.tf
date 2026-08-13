@@ -1,4 +1,6 @@
 terraform {
+  backend "s3" {}
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -31,7 +33,7 @@ data "aws_ami" "ubuntu" {
 # Create an SSH key pair to access the instance
 resource "aws_key_pair" "deployer_key" {
   key_name   = "app-deployer-key"
-  public_key = var.path_to_ssh_public_key
+  public_key = var.ssh_public_key
   lifecycle { create_before_destroy = true }
 }
 
@@ -124,11 +126,11 @@ resource "aws_security_group" "frontend_sg" {
 
 # Database EC2 Instance
 resource "aws_instance" "db_server" {
-  ami                  = data.aws_ami.ubuntu.id
-  instance_type        = "t2.micro"
-  key_name             = aws_key_pair.deployer_key.key_name
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t2.micro"
+  key_name               = aws_key_pair.deployer_key.key_name
   vpc_security_group_ids = [aws_security_group.db_sg.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_ecr_pull_profile.name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_ecr_pull_profile.name
 
   tags = {
     Name = "Database Server"
@@ -137,11 +139,11 @@ resource "aws_instance" "db_server" {
 
 # Backend EC2 Instance
 resource "aws_instance" "backend_server" {
-  ami                  = data.aws_ami.ubuntu.id
-  instance_type        = "t2.micro"
-  key_name             = aws_key_pair.deployer_key.key_name
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t2.micro"
+  key_name               = aws_key_pair.deployer_key.key_name
   vpc_security_group_ids = [aws_security_group.backend_sg.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_ecr_pull_profile.name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_ecr_pull_profile.name
 
   tags = {
     Name = "Backend Server"
@@ -150,11 +152,11 @@ resource "aws_instance" "backend_server" {
 
 # Frontend EC2 Instance
 resource "aws_instance" "frontend_server" {
-  ami                  = data.aws_ami.ubuntu.id
-  instance_type        = "t2.micro"
-  key_name             = aws_key_pair.deployer_key.key_name
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t2.micro"
+  key_name               = aws_key_pair.deployer_key.key_name
   vpc_security_group_ids = [aws_security_group.frontend_sg.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_ecr_pull_profile.name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_ecr_pull_profile.name
 
   tags = {
     Name = "Frontend Server"
