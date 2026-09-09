@@ -73,7 +73,7 @@ jobs:
             -backend-config="bucket=$TF_STATE_BUCKET" \
             -backend-config="key=posts-app/terraform.tfstate" \
             -backend-config="region=$AWS_REGION" \
-            -backend-config="use_lockfile=true" \
+            -backend-config="dynamodb_table=posts-app-terraform-locks" \
             -backend-config="encrypt=true"
 
       - name: Apply Terraform

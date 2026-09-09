@@ -163,7 +163,7 @@ cd infra
 terraform init -backend-config="bucket=posts-app-terraform-state-<account-id>" \
   -backend-config="key=posts-app/terraform.tfstate" \
   -backend-config="region=us-east-1" \
-  -backend-config="use_lockfile=true" \
+  -backend-config="dynamodb_table=posts-app-terraform-locks" \
   -backend-config="encrypt=true"
 terraform output
 
