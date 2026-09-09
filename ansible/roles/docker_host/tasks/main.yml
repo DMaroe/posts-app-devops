@@ -1,0 +1,80 @@
+---
+# Common setup shared by every posts-app server: Docker, Docker Compose,
+# the AWS CLI, and an authenticated ECR login.
+
+- name: "Wait for SSH to become available"
+  wait_for_connection:
+    connect_timeout: 10
+    sleep: 5
+    delay: 5
+    timeout: "{{ docker_host_ssh_timeout | default(180) }}"
+
+- name: "Gather facts"
+  setup:
+
+- name: "Update apt packages"
+  apt:
+    update_cache: yes
+
+- name: "Install required packages"
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - software-properties-common
+
+- name: "Add Docker GPG key"
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: "Add Docker repository"
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+
+- name: "Install Docker"
+  apt:
+    name: docker-ce
+    state: present
+    update_cache: yes
+
+- name: "Start and enable Docker service"
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: "Add ubuntu user to docker group"
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: "Reset SSH connection to allow user changes to take effect"
+  meta: reset_connection
+
+- name: "Install Docker Compose"
+  get_url:
+    url: https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-Linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+
+- name: "Create app directory"
+  file:
+    path: /home/ubuntu/app
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+
+- name: "Install AWS CLI"
+  apt:
+    name: awscli
+    state: present
+
+- name: "Log in to ECR"
+  shell: "aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ ecr_registry }}"
+  become: false

@@ -6,5 +6,8 @@ node_modules
 *.tfvars
 *.tfvars.json
 
+# Generated fresh by the CI pipeline (and previously deploy.sh) on every run.
+ansible/inventory.yml
+
 # Provider locks are safe and should be committed for reproducible installs.
 !.terraform.lock.hcl
