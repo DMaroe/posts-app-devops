@@ -1,4 +1,10 @@
 # DATABASE SERVER SETUP
+#
+# Only the database is configured over SSH. The frontend and backend tiers run
+# in auto scaling groups, where instances are created and destroyed on demand
+# and have no stable address to connect to, so those instances configure
+# themselves at boot from their launch template's user data
+# (infra/user_data/app_tier.sh.tftpl).
 - name: "Setup database server"
   hosts: database
   remote_user: ubuntu
@@ -25,89 +31,9 @@
         dest: /home/ubuntu/app/.env
         owner: ubuntu
         group: ubuntu
+        mode: "0600"
 
     - name: "Run docker-compose for database"
-      community.docker.docker_compose_v2:
-        project_src: /home/ubuntu/app
-      become: false
-
-# BACKEND SERVER SETUP
-- name: "Setup backend server"
-  hosts: backend
-  remote_user: ubuntu
-  become: true
-  gather_facts: no
-
-  roles:
-    - docker_host
-
-  tasks:
-    - name: "Copy docker-compose for backend"
-      copy:
-        src: ../docker-compose-backend.yml
-        dest: /home/ubuntu/app/docker-compose.yml
-        owner: ubuntu
-        group: ubuntu
-
-    - name: "Create .env file for backend"
-      copy:
-        content: |
-          BACKEND_IMAGE={{ backend_image }}
-          DB_HOST={{ db_private_ip }}
-          DB_USER={{ db_user }}
-          DB_PASSWORD={{ db_password }}
-        dest: /home/ubuntu/app/.env
-        owner: ubuntu
-        group: ubuntu
-
-    - name: "Wait for database to be ready"
-      wait_for:
-        host: "{{ db_private_ip }}"
-        port: 5432
-        timeout: 60
-
-    - name: "Run docker-compose for backend"
-      community.docker.docker_compose_v2:
-        project_src: /home/ubuntu/app
-      become: false
-
-# FRONTEND SERVER SETUP
-- name: "Setup frontend server"
-  hosts: frontend
-  remote_user: ubuntu
-  become: true
-  gather_facts: no
-
-  vars:
-    docker_host_ssh_timeout: 300
-
-  roles:
-    - docker_host
-
-  tasks:
-    - name: "Copy docker-compose for frontend"
-      copy:
-        src: ../docker-compose-frontend.yml
-        dest: /home/ubuntu/app/docker-compose.yml
-        owner: ubuntu
-        group: ubuntu
-
-    - name: "Create .env file for frontend"
-      copy:
-        content: |
-          FRONTEND_IMAGE={{ frontend_image }}
-          BACKEND_HOST={{ backend_public_ip }}
-        dest: /home/ubuntu/app/.env
-        owner: ubuntu
-        group: ubuntu
-
-    - name: "Wait for backend to be ready"
-      wait_for:
-        host: "{{ backend_public_ip }}"
-        port: 8080
-        timeout: 60
-
-    - name: "Run docker-compose for frontend"
       community.docker.docker_compose_v2:
         project_src: /home/ubuntu/app
       become: false

@@ -1,3 +1,4 @@
+import os from 'os';
 import express from 'express';
 import morgan from 'morgan';
 import { Pool } from 'pg';
@@ -41,7 +42,8 @@ app.get(["/", "/status"], async (req, res, next) => {
     res.json({
         status: "OK",
         service: "backend",
-        db: db ? "OK" : "ERROR"
+        db: db ? "OK" : "ERROR",
+        host: os.hostname()
     })
 })
 

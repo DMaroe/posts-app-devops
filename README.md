@@ -1,4 +1,4 @@
-# Posts App — DevOps
+# Twitties — DevOps
 
 ![Terraform](https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white)
 ![Ansible](https://img.shields.io/badge/Ansible-EE0000?logo=ansible&logoColor=white)
@@ -8,14 +8,23 @@
 ![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
 
-A Posts application (frontend + backend + database) that deploys itself to AWS
-end-to-end: one `git push` to `main` provisions the infrastructure, builds the
-Docker images, and configures the servers — no manual steps required.
+**Twitties** — a small social app (frontend + backend + database) that deploys
+itself to AWS end-to-end: one `git push` to `main` provisions the
+infrastructure, builds the Docker images, and rolls the new version out across
+a load-balanced, auto-scaled fleet — no manual steps required.
 
 Built with a partner as part of a university DevOps course; my primary
 contributions were the Terraform infrastructure and the CI/CD pipeline.
 
-**Live demo:** http://13.220.97.79:8081/
+**Live demo:** _(the URL is the frontend load balancer's DNS name, printed at
+the end of each pipeline run — the app is deployed on demand rather than left
+running)_
+
+The home page shows which frontend and backend instance served your request.
+Refreshing it is the quickest way to see the load balancing working.
+
+> Twitties is the product name. The infrastructure, ECR repositories, and API
+> routes still use the original `posts-app` / `posts` naming.
 
 ---
 
@@ -32,37 +41,79 @@ contributions were the Terraform infrastructure and the CI/CD pipeline.
 
 ## 1. Architecture
 
-Three services, each on its **own EC2 instance**, each with its **own
-security group**:
+Three tiers. The two stateless tiers each run behind their own load balancer in
+an auto scaling group spread across availability zones; the database is a
+single instance reachable only from the backend.
 
 ```
-                    Internet
-                       │
-        ┌──────────────┼──────────────┐
-        │ :8081                       │ :8080
-        ▼                              ▼
-┌───────────────┐              ┌───────────────┐        ┌───────────────┐
-│   Frontend     │  BACKEND_URL │    Backend     │  :5432 │   Database     │
-│  EC2 instance  │ ───────────► │  EC2 instance  │ ─────► │  EC2 instance  │
-│  (public)      │              │  (public)      │        │  (private only)│
-└───────────────┘              └───────────────┘        └───────────────┘
+                            Internet
+                               │
+                               ▼  :80
+                 ┌───────────────────────────┐
+                 │   Frontend ALB (public)    │
+                 └───────────────────────────┘
+                    │                      │      health check: GET /status
+                    ▼                      ▼
+            ┌──────────────┐       ┌──────────────┐
+            │ Frontend EC2 │       │ Frontend EC2 │   auto scaling group
+            │    :8081     │       │    :8081     │   (across AZs)
+            └──────────────┘       └──────────────┘
+                    │                      │
+                    └──────────┬───────────┘
+                               ▼  :8080
+                 ┌───────────────────────────┐
+                 │  Backend ALB (internal)    │   not internet-facing
+                 └───────────────────────────┘
+                    │                      │
+                    ▼                      ▼
+            ┌──────────────┐       ┌──────────────┐
+            │ Backend EC2  │       │ Backend EC2  │   auto scaling group
+            │    :8080     │       │    :8080     │   (across AZs)
+            └──────────────┘       └──────────────┘
+                    │                      │
+                    └──────────┬───────────┘
+                               ▼  :5432
+                      ┌──────────────────┐
+                      │   Database EC2   │   single instance,
+                      │    PostgreSQL    │   private to the backend
+                      └──────────────────┘
 ```
 
-- **Frontend** — serves the UI. Publicly reachable on port `8081`.
-- **Backend** — exposes the Posts HTTP API. Publicly reachable on port `8080`.
-- **Database** — PostgreSQL. Port `5432` is only open to the backend's
-  security group, so it can never be reached directly from the internet.
+- **Frontend** — serves the UI. The only public entry point, reached through
+  the frontend ALB on port `80`.
+- **Backend** — the HTTP API. Its ALB is **internal**, so the API is reachable
+  from the frontend tier inside the VPC but never from the internet.
+- **Database** — PostgreSQL. Port `5432` is only open to the backend tier's
+  security group.
 
-Each instance runs a single Docker container (via `docker compose`) pulled
-straight from our own ECR repositories — nothing is pulled from third-party
-registries. EC2 instances authenticate to ECR using an IAM instance profile
-(`infra/iam.tf`), so no registry credentials are ever stored on the servers.
+Each security group only accepts traffic from the layer directly in front of
+it: the frontend instances accept traffic only from the frontend ALB, the
+backend ALB only from the frontend instances, the backend instances only from
+the backend ALB, and the database only from the backend instances.
+
+Every instance runs a single Docker container (via `docker compose`) pulled
+from our own ECR repositories — nothing is pulled from third-party registries.
+Instances authenticate to ECR using an IAM instance profile (`infra/iam.tf`),
+so no registry credentials are ever stored on the servers.
+
+### Why the load balancers matter here
+- **No single point of failure.** Each stateless tier runs two or more
+  instances. If one fails its health check, the ALB stops sending it traffic
+  and the auto scaling group replaces it.
+- **Stable addressing.** Instances are disposable and their IPs change, so
+  nothing addresses an instance directly any more. The frontend finds the
+  backend at the internal ALB's DNS name.
+- **Zero-downtime deploys.** A new image rolls out as a rolling instance
+  refresh, replacing instances a portion at a time while the rest serve
+  traffic (see [section 4](#4-deploying-to-aws)).
 
 ### Request flow
-1. Browser → Frontend (`:8081`)
-2. Frontend → Backend (`:8080`), using the backend's public IP as `BACKEND_URL`
-3. Backend → Database (private IP, `:5432`)
-4. Response flows back the same path
+1. Browser → Frontend ALB (`:80`)
+2. Frontend ALB → one of the frontend instances (`:8081`)
+3. Frontend → Backend ALB (`BACKEND_URL` is the internal ALB DNS name, `:8080`)
+4. Backend ALB → one of the backend instances (`:8080`)
+5. Backend → Database (private IP, `:5432`)
+6. Response flows back the same path
 
 ---
 
@@ -125,25 +176,43 @@ pipeline run.
 Deployment is fully automated by the GitHub Actions pipeline
 (`.github/workflows/ci-pipeline.yml`) on every push to `main`:
 
-1. **Terraform** provisions/updates the infrastructure — 3 EC2 instances,
-   their security groups, and the ECR repositories (`infra/`).
+1. **Terraform** creates the ECR repositories first, so the images built in the
+   next step have somewhere to go.
 2. **Docker** builds the backend, frontend, and db images and pushes them to
-   ECR.
-3. **Terraform outputs** (public/private IPs of each instance) are extracted
-   and used to generate an Ansible inventory on the fly.
-4. **Ansible** (`ansible/playbook.yml`) SSHes into each instance, installs
-   Docker, and starts the correct container with the right environment
-   variables (DB credentials come from GitHub Secrets, not the repo).
+   ECR, tagged with the commit SHA.
+3. **Terraform** applies the full infrastructure with `image_tag` pinned to
+   that commit SHA (`infra/`). Because the tag is baked into each tier's launch
+   template, this creates a new launch template version and triggers a
+   **rolling instance refresh** on the auto scaling groups.
+4. **Ansible** (`ansible/playbook.yml`) configures the database tier over SSH.
+   It is the only tier Ansible touches — see below.
+5. **The pipeline waits** for both rolling deployments to report success before
+   the run is considered green, then prints the frontend URL.
 
 No local Terraform apply, SSH key, IP address, or `.tfvars` file is needed —
 everything runs inside the pipeline.
+
+### How each tier is configured
+
+| Tier | Configured by | Why |
+|---|---|---|
+| Frontend, Backend | Launch template user data (`infra/user_data/app_tier.sh.tftpl`) | Auto scaling group instances are created and destroyed on demand, so there is no stable host for Ansible to SSH into. Each instance installs Docker, authenticates to ECR with its instance profile, and starts its container at boot. |
+| Database | Ansible over SSH | A single long-lived instance with a known address. |
+
+### Deploying a new version
+
+A deployment is a launch template change, not an SSH session. Terraform updates
+the template, the auto scaling group replaces instances a portion at a time
+(`min_healthy_percentage = 50`), and the ALB only sends traffic to instances
+that pass `GET /status`. If new instances never become healthy, the refresh
+fails and the pipeline fails with it.
 
 ### Required GitHub Secrets
 
 | Secret | Purpose |
 |---|---|
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credentials for the `github-actions-deploy` IAM user |
-| `SDO_KEY` / `SDO_KEY_PUB` | SSH keypair GitHub Actions uses to reach the EC2 instances |
+| `SDO_KEY` / `SDO_KEY_PUB` | SSH keypair GitHub Actions uses to reach the database instance |
 | `DB_USER` / `DB_PASSWORD` | Database credentials |
 
 ### Terraform state
@@ -157,21 +226,41 @@ its EC2, ECR, and IAM permissions.
 
 ## 5. Development notes
 
-- **Why 3 separate EC2 instances instead of one?** It mirrors a real
-  production setup where each tier can be scaled, secured, and redeployed
-  independently — and it forced us to get the security-group rules and
-  private networking right (backend ↔ db) instead of everything talking over
-  `localhost`.
-- **Why Terraform + Ansible together?** Terraform is the architect — it
-  creates the instances and network rules. Ansible is the interior
-  designer — it installs Docker and starts the right container on each
-  box once it exists.
+- **Why separate tiers instead of one box?** It mirrors a real production
+  setup where each tier can be scaled, secured, and redeployed independently —
+  and it forced us to get the security-group rules and private networking right
+  (backend ↔ db) instead of everything talking over `localhost`.
+- **Why Terraform + Ansible together?** Terraform is the architect — it creates
+  the instances, load balancers, and network rules. Ansible is the interior
+  designer for the one tier that has a fixed address: the database. The
+  autoscaled tiers configure themselves at boot instead, because an instance
+  that might be created at 3am by a scaling event cannot wait for someone's
+  pipeline to SSH into it.
+- **Why is the database not autoscaled?** An auto scaling group replaces
+  instances freely, which is exactly what you want for stateless tiers and
+  exactly what you do not want for the one holding your data. Managed
+  multi-AZ storage (RDS) is the natural next step for this tier.
+- **Why does the app show which instance served the page?** It makes the load
+  balancing observable. Without it, a two-instance deployment looks identical
+  to a one-instance deployment from the browser.
 - **Common issues we hit:**
   - Forgetting to open a security group port after adding a new service.
   - Race conditions between instances booting and Ansible trying to SSH in
     (fixed with a wait + retry before the playbook runs).
   - `t2.micro` not being free-tier eligible in this AWS environment — fixed
     by switching to `t3.micro`.
+  - Not every availability zone offers every instance type, which makes an
+    auto scaling group fail to launch in that AZ. `infra/network.tf` filters
+    the subnets down to AZs that actually offer the instance type.
+
+### Known trade-offs
+- Database credentials reach the backend tier through the launch template's
+  user data, which puts them in Terraform state. The state bucket is encrypted
+  and versioned, but a production system would keep them in AWS Secrets Manager
+  or SSM Parameter Store and have instances fetch them at boot with their
+  instance profile.
+- The load balancers serve plain HTTP. HTTPS would need an ACM certificate and
+  a domain name.
 
 ---
 
@@ -180,7 +269,8 @@ its EC2, ECR, and IAM permissions.
 Useful commands:
 
 ```bash
-# Read the current infrastructure state (IPs, ECR URLs) without deploying
+# Read the current infrastructure state (load balancer URLs, IPs, ECR URLs)
+# without deploying
 cd infra
 terraform init -backend-config="bucket=posts-app-terraform-state-<account-id>" \
   -backend-config="key=posts-app/terraform.tfstate" \
@@ -189,6 +279,21 @@ terraform init -backend-config="bucket=posts-app-terraform-state-<account-id>" \
   -backend-config="encrypt=true"
 terraform output
 
+# The public URL of the app
+terraform output -raw frontend_url
+
 # Trigger a deployment manually instead of pushing to main
 gh workflow run "Posts App AWS Deployment"
+
+# Watch a rolling deployment as it happens
+aws autoscaling describe-instance-refreshes \
+  --auto-scaling-group-name posts-app-frontend-asg \
+  --query 'InstanceRefreshes[0].[Status,PercentageComplete]'
+
+# Which instances are currently in service behind the frontend load balancer
+aws elbv2 describe-target-health \
+  --target-group-arn "$(aws elbv2 describe-target-groups \
+    --names posts-app-frontend-tg \
+    --query 'TargetGroups[0].TargetGroupArn' --output text)" \
+  --query 'TargetHealthDescriptions[].[Target.Id,TargetHealth.State]'
 ```

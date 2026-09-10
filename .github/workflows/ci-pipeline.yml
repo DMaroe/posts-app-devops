@@ -19,6 +19,9 @@ jobs:
       TF_WORKING_DIR: ./infra
       ANSIBLE_DIR: ./ansible
       AWS_REGION: us-east-1
+      TF_VAR_ssh_public_key: ${{ secrets.SDO_KEY_PUB }}
+      TF_VAR_db_user: ${{ secrets.DB_USER }}
+      TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
 
     steps:
       # 1. Checkout code repository
@@ -47,7 +50,7 @@ jobs:
 
           echo "Authenticated as AWS IAM user '$EXPECTED_AWS_USER'."
 
-      # 3. Set up remote Terraform state and provision AWS infrastructure
+      # 3. Set up remote Terraform state
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -76,13 +79,19 @@ jobs:
             -backend-config="dynamodb_table=posts-app-terraform-locks" \
             -backend-config="encrypt=true"
 
-      - name: Apply Terraform
+      # 4. Create the ECR repositories before building, so the images have
+      #    somewhere to be pushed to. The app tiers are deliberately NOT created
+      #    yet: their launch templates bake in the image tag, so they are
+      #    applied after the images for this commit exist.
+      - name: Ensure ECR repositories exist
         working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          TF_VAR_ssh_public_key: ${{ secrets.SDO_KEY_PUB }}
-        run: terraform apply -auto-approve
+        run: |
+          terraform apply -auto-approve \
+            -target=aws_ecr_repository.backend \
+            -target=aws_ecr_repository.frontend \
+            -target=aws_ecr_repository.db
 
-      # 4. Build and push images after Terraform creates the ECR repositories
+      # 5. Build and push this commit's images
       - name: Login to Amazon ECR
         id: ecr_login
         uses: aws-actions/amazon-ecr-login@v2
@@ -111,18 +120,27 @@ jobs:
           docker push $ECR_REGISTRY/posts-app-db:${{ github.sha }}
           docker push $ECR_REGISTRY/posts-app-db:latest
 
-      # 5. Extract Terraform outputs and pass them to Ansible
+      # 6. Apply the full infrastructure pinned to this commit's image tag.
+      #    Changing the tag changes the launch templates, which rolls the auto
+      #    scaling groups onto the new images.
+      - name: Apply Terraform
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_image_tag: ${{ github.sha }}
+        run: terraform apply -auto-approve
+
+      # 7. Extract the outputs the rest of the pipeline needs
       - name: Extract Terraform outputs
-        id: tf_outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           echo "DB_PUBLIC_IP=$(terraform output -raw db_server_public_ip)" >> $GITHUB_ENV
           echo "DB_PRIVATE_IP=$(terraform output -raw db_server_private_ip)" >> $GITHUB_ENV
-          echo "BACKEND_PUBLIC_IP=$(terraform output -raw backend_server_public_ip)" >> $GITHUB_ENV
-          echo "BACKEND_PRIVATE_IP=$(terraform output -raw backend_server_private_ip)" >> $GITHUB_ENV
-          echo "FRONTEND_PUBLIC_IP=$(terraform output -raw frontend_server_public_ip)" >> $GITHUB_ENV
+          echo "FRONTEND_URL=$(terraform output -raw frontend_url)" >> $GITHUB_ENV
+          echo "FRONTEND_ASG=$(terraform output -raw frontend_asg_name)" >> $GITHUB_ENV
+          echo "BACKEND_ASG=$(terraform output -raw backend_asg_name)" >> $GITHUB_ENV
 
-      # 6. Generate Ansible inventory dynamically
+      # 8. Configure the database tier with Ansible. The app tiers configure
+      #    themselves from user data, so they are not in this inventory.
       - name: Generate Ansible inventory
         working-directory: ${{ env.ANSIBLE_DIR }}
         run: |
@@ -135,33 +153,11 @@ jobs:
                     ansible_host: $DB_PUBLIC_IP
                     ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
                     ansible_user: ubuntu
-
-              backend:
-                hosts:
-                  backend_server:
-                    ansible_host: $BACKEND_PUBLIC_IP
-                    ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
-                    ansible_user: ubuntu
-                    db_private_ip: $DB_PRIVATE_IP
-
-              frontend:
-                hosts:
-                  frontend_server:
-                    ansible_host: $FRONTEND_PUBLIC_IP
-                    ansible_ssh_private_key_file: ~/.ssh/github_sdo_key
-                    ansible_user: ubuntu
-                    backend_public_ip: $BACKEND_PUBLIC_IP
           EOF
 
-      # 7. Wait for instances to boot
-      - name: Wait for instances
-        run: sleep 45
-
-      # 8. Install Ansible
       - name: Install Ansible
         run: sudo apt-get update && sudo apt-get install -y ansible
 
-      # 9. Add the SSH private key from GitHub Secrets
       - name: Setup SSH key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SDO_KEY }}
@@ -169,10 +165,8 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/github_sdo_key
           chmod 600 ~/.ssh/github_sdo_key
-          ssh-keyscan -H $FRONTEND_PUBLIC_IP $BACKEND_PUBLIC_IP $DB_PUBLIC_IP >> ~/.ssh/known_hosts
+          ssh-keyscan -H $DB_PUBLIC_IP >> ~/.ssh/known_hosts || true
 
-      # 10. Run the Ansible playbook, passing the images we just built and
-      #     DB credentials sourced from GitHub Secrets (not hardcoded).
       - name: Run Ansible playbook
         working-directory: ${{ env.ANSIBLE_DIR }}
         env:
@@ -182,14 +176,47 @@ jobs:
             aws_region=${{ env.AWS_REGION }} \
             ecr_registry=$ECR_REGISTRY \
             db_image=$ECR_REGISTRY/posts-app-db:${{ github.sha }} \
-            backend_image=$ECR_REGISTRY/posts-app-backend:${{ github.sha }} \
-            frontend_image=$ECR_REGISTRY/posts-app-frontend:${{ github.sha }} \
             db_user=${{ secrets.DB_USER }} \
             db_password=${{ secrets.DB_PASSWORD }}"
 
-      # 11. Print summary
+      # 9. A deployment is not finished until the rolling replacement of the
+      #    app tiers has actually succeeded.
+      - name: Wait for rolling deployments
+        run: |
+          for asg in "$FRONTEND_ASG" "$BACKEND_ASG"; do
+            echo "Waiting for rolling deployment of $asg..."
+
+            for attempt in $(seq 1 90); do
+              status="$(aws autoscaling describe-instance-refreshes \
+                --auto-scaling-group-name "$asg" \
+                --max-records 1 \
+                --query 'InstanceRefreshes[0].Status' \
+                --output text)"
+
+              case "$status" in
+                Successful|None)
+                  echo "$asg: $status"
+                  break
+                  ;;
+                Failed|Cancelled|RollbackSuccessful|RollbackFailed)
+                  echo "::error::$asg instance refresh finished with status $status"
+                  exit 1
+                  ;;
+                *)
+                  echo "$asg: $status"
+                  sleep 20
+                  ;;
+              esac
+
+              if [ "$attempt" -eq 90 ]; then
+                echo "::error::$asg instance refresh did not finish in time"
+                exit 1
+              fi
+            done
+          done
+
+      # 10. Print summary
       - name: Deployment summary
         run: |
+          echo "Twitties app:     $FRONTEND_URL"
           echo "Database server:  $DB_PUBLIC_IP"
-          echo "Backend server:    http://$BACKEND_PUBLIC_IP:8080"
-          echo "Frontend app:      http://$FRONTEND_PUBLIC_IP:8081"

@@ -1,0 +1,54 @@
+#!/bin/bash
+# Boot-time configuration for a load-balanced app tier instance.
+#
+# Auto scaling group instances come and go on their own, so there is no fixed
+# host for Ansible to SSH into. Each instance instead configures itself here:
+# install Docker, authenticate to ECR with the instance profile, and start the
+# tier's container. Output lands in /var/log/cloud-init-output.log.
+set -euxo pipefail
+
+retry() {
+  local attempt=1
+  until "$@"; do
+    if [ $attempt -ge 5 ]; then
+      echo "giving up after $attempt attempts: $*" >&2
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    sleep 10
+  done
+}
+
+export DEBIAN_FRONTEND=noninteractive
+
+retry apt-get update
+retry apt-get install -y ca-certificates curl gnupg awscli
+
+# Docker CE and the compose plugin from Docker's own apt repository
+install -m 0755 -d /etc/apt/keyrings
+retry curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy stable" > /etc/apt/sources.list.d/docker.list
+retry apt-get update
+retry apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+systemctl enable --now docker
+usermod -aG docker ubuntu
+
+mkdir -p /home/ubuntu/app
+
+cat > /home/ubuntu/app/docker-compose.yml <<'COMPOSE_EOF'
+${compose_file}
+COMPOSE_EOF
+
+cat > /home/ubuntu/app/.env <<'ENV_EOF'
+${env_file}
+ENV_EOF
+
+chown -R ubuntu:ubuntu /home/ubuntu/app
+chmod 600 /home/ubuntu/app/.env
+
+retry bash -c "aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry}"
+
+cd /home/ubuntu/app
+retry docker compose up -d

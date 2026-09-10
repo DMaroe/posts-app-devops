@@ -2,6 +2,7 @@ services:
   frontend:
     image: ${FRONTEND_IMAGE}
     container_name: frontend-service
+    restart: always
     environment:
       PORT: 8081
       BACKEND_URL: http://${BACKEND_HOST}:8080

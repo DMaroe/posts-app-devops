@@ -10,7 +10,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
 }
 
 # Find the latest Ubuntu 22.04 AMI
@@ -42,7 +42,7 @@ resource "aws_security_group" "db_sg" {
   name        = "database-sg"
   description = "Allow PostgreSQL from backend only"
 
-  # Allow PostgreSQL from backend server only
+  # Allow PostgreSQL from backend servers only
   ingress {
     protocol        = "tcp"
     from_port       = 5432
@@ -50,7 +50,7 @@ resource "aws_security_group" "db_sg" {
     security_groups = [aws_security_group.backend_sg.id]
   }
 
-  # SSH for management
+  # SSH for management (Ansible configures this tier)
   ingress {
     protocol    = "tcp"
     from_port   = 22
@@ -66,17 +66,16 @@ resource "aws_security_group" "db_sg" {
   }
 }
 
-# Backend Security Group
+# Backend Security Group - only reachable through the internal load balancer
 resource "aws_security_group" "backend_sg" {
   name        = "backend-sg"
-  description = "Allow HTTP from frontend and public"
+  description = "Allow API traffic from the internal backend load balancer only"
 
-  # Allow backend port from anywhere (public API)
   ingress {
-    protocol    = "tcp"
-    from_port   = 8080
-    to_port     = 8080
-    cidr_blocks = ["0.0.0.0/0"]
+    protocol        = "tcp"
+    from_port       = 8080
+    to_port         = 8080
+    security_groups = [aws_security_group.backend_alb_sg.id]
   }
 
   # SSH
@@ -95,17 +94,16 @@ resource "aws_security_group" "backend_sg" {
   }
 }
 
-# Frontend Security Group
+# Frontend Security Group - only reachable through the public load balancer
 resource "aws_security_group" "frontend_sg" {
   name        = "frontend-sg"
-  description = "Allow HTTP from public"
+  description = "Allow web traffic from the public frontend load balancer only"
 
-  # Allow frontend port from anywhere
   ingress {
-    protocol    = "tcp"
-    from_port   = 8081
-    to_port     = 8081
-    cidr_blocks = ["0.0.0.0/0"]
+    protocol        = "tcp"
+    from_port       = 8081
+    to_port         = 8081
+    security_groups = [aws_security_group.frontend_alb_sg.id]
   }
 
   # SSH
@@ -125,9 +123,13 @@ resource "aws_security_group" "frontend_sg" {
 }
 
 # Database EC2 Instance
+#
+# The database stays a single instance: an auto scaling group replaces
+# instances freely, which is fine for the stateless app tiers but would throw
+# away data here. Managed multi-AZ storage (RDS) is the next step for this tier.
 resource "aws_instance" "db_server" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.micro"
+  instance_type          = var.instance_type
   key_name               = aws_key_pair.deployer_key.key_name
   vpc_security_group_ids = [aws_security_group.db_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_ecr_pull_profile.name
@@ -137,48 +139,10 @@ resource "aws_instance" "db_server" {
   }
 }
 
-# Backend EC2 Instance
-resource "aws_instance" "backend_server" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.micro"
-  key_name               = aws_key_pair.deployer_key.key_name
-  vpc_security_group_ids = [aws_security_group.backend_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2_ecr_pull_profile.name
-
-  tags = {
-    Name = "Backend Server"
-  }
-}
-
-# Frontend EC2 Instance
-resource "aws_instance" "frontend_server" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.micro"
-  key_name               = aws_key_pair.deployer_key.key_name
-  vpc_security_group_ids = [aws_security_group.frontend_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2_ecr_pull_profile.name
-
-  tags = {
-    Name = "Frontend Server"
-  }
-}
-
 output "db_server_public_ip" {
   value = aws_instance.db_server.public_ip
 }
 
 output "db_server_private_ip" {
   value = aws_instance.db_server.private_ip
-}
-
-output "backend_server_public_ip" {
-  value = aws_instance.backend_server.public_ip
-}
-
-output "backend_server_private_ip" {
-  value = aws_instance.backend_server.private_ip
-}
-
-output "frontend_server_public_ip" {
-  value = aws_instance.frontend_server.public_ip
 }

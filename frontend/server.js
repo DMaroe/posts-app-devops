@@ -1,3 +1,4 @@
+import os from 'os';
 import axios from 'axios';
 import express from 'express';
 import expressLayouts from 'express-ejs-layouts';
@@ -39,10 +40,21 @@ app.get("/", async (req, res) => {
 
         const backend = statusResponse.data?.status === "OK"
         const db = statusResponse.data?.db === "OK"
-        res.render("pages/home", { backend, db })
+
+        res.render("pages/home", {
+            backend,
+            db,
+            frontendHost: os.hostname(),
+            backendHost: statusResponse.data?.host || "unknown",
+        })
     } catch (e) {
         console.error("could not reach backend", e)
-        res.render("pages/home", { backend: false, db: false })
+        res.render("pages/home", {
+            backend: false,
+            db: false,
+            frontendHost: os.hostname(),
+            backendHost: "unreachable",
+        })
     }
 })
 
