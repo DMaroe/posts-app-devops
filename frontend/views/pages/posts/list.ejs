@@ -1,34 +1,38 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h1 class="mb-0">Posts</h1>
-  <a href="/posts/new" class="btn btn-primary">Add Post</a>
+  <h1 class="mb-0">Twitties</h1>
+  <a href="/posts/new" class="btn btn-primary">New Twittie</a>
 </div>
 
 <% if (posts && posts.length > 0) { %>
-  <ul class="list-group">
+  <div>
     <% posts.forEach(function(item) { %>
-      <li class="list-group-item d-flex justify-content-between align-items-start">
-        <div class="me-3">
-          <h5 class="mb-1"><%= item.title %></h5>
-          <small 
-            class="text-muted post-date" 
+      <div class="twittie-row d-flex py-3">
+        <div class="avatar-circle me-3">🐦</div>
+        <div class="flex-grow-1">
+          <a
+            href="/posts/<%= item.id || item._id || item.postId %>"
+            class="text-decoration-none text-reset"
+          >
+            <h5 class="mb-1"><%= item.title %></h5>
+          </a>
+          <small
+            class="text-muted post-date"
             data-datetime="<%= new Date(item.created_at).toISOString() %>">
             <!-- fallback: server time -->
             <%= new Date(item.created_at).toUTCString() %>
           </small>
+          <div class="twittie-actions d-flex gap-4 mt-2">
+            <span>💬</span>
+            <span>🔁</span>
+            <span>❤️</span>
+            <span>📤</span>
+          </div>
         </div>
-        <div class="ms-auto">
-          <a
-            href="/posts/<%= item.id || item._id || item.postId %>"
-            class="btn btn-outline-primary btn-sm"
-          >
-            View
-          </a>
-        </div>
-      </li>
+      </div>
     <% }) %>
-  </ul>
+  </div>
 <% } else { %>
   <div class="alert alert-info">
-    No posts yet. Click <strong>Add Post</strong> to create one.
+    No twitties yet. Click <strong>New Twittie</strong> to create one.
   </div>
 <% } %>
