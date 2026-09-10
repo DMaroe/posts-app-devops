@@ -83,7 +83,7 @@ app.use((req, res) => {
     res.status(404).render('pages/error', {
         title: 'Not Found',
         status: 404,
-        message: 'Page Not Found',
+        message: 'This twittie doesn\'t exist',
         details: `The requested URL ${req.originalUrl} was not found on this server.`,
     });
 });

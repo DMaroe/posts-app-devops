@@ -1,9 +1,28 @@
+<div class="d-flex mb-3">
+  <div class="avatar-circle me-3">🐦</div>
+  <div>
+    <h5 class="mb-0">Twittie</h5>
+    <small class="text-muted">@twitties</small>
+  </div>
+</div>
+
 <h2><%= post.title %></h2>
-<small 
-    class="text-muted post-date" 
+<p class="fs-5"><%= post.content %></p>
+
+<small
+    class="text-muted post-date"
     data-datetime="<%= new Date(post.created_at).toISOString() %>">
     <!-- fallback: server time -->
     <%= new Date(post.created_at).toUTCString() %>
 </small>
-<p><%= post.content %></p>
+
+<hr class="my-3">
+
+<div class="twittie-actions d-flex gap-5">
+  <span>💬 <small>Reply</small></span>
+  <span>🔁 <small>Retwittie</small></span>
+  <span>❤️ <small>Like</small></span>
+  <span>📤 <small>Share</small></span>
+</div>
+
 <br />
