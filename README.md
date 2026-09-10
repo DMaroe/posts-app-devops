@@ -1,10 +1,32 @@
 # Posts App — DevOps
 
-COSC2759 Assignment 2, Semester 2 2025 (s4125656-s4125640)
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?logo=terraform&logoColor=white)
+![Ansible](https://img.shields.io/badge/Ansible-EE0000?logo=ansible&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-232F3E?logo=amazonaws&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?logo=githubactions&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
 
 A Posts application (frontend + backend + database) that deploys itself to AWS
 end-to-end: one `git push` to `main` provisions the infrastructure, builds the
 Docker images, and configures the servers — no manual steps required.
+
+Built with a partner as part of a university DevOps course; my primary
+contributions were the Terraform infrastructure and the CI/CD pipeline.
+
+**Live demo:** http://13.220.97.79:8081/
+
+---
+
+## Table of Contents
+
+1. [Architecture](#1-architecture)
+2. [Services](#2-services)
+3. [Running locally with Docker Compose](#3-running-locally-with-docker-compose)
+4. [Deploying to AWS](#4-deploying-to-aws)
+5. [Development notes](#5-development-notes)
+6. [Appendix](#6-appendix)
 
 ---
 
